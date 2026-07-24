@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.15.0"
+local BUILD = "v0.15.1"
 
 local CARGO_ITEMS = {
 	"Hot Dog",

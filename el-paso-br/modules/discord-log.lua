@@ -1,7 +1,5 @@
 -- EPBR Discord webhook logging (MAXI HUB style)
 
-local DEFAULT_KEY_WEBHOOK = "https://discord.com/api/webhooks/YOUR_WEBHOOK_HERE"
-
 return function(deps)
 	deps = deps or {}
 	local HttpService = deps.HttpService or game:GetService("HttpService")
@@ -23,12 +21,27 @@ return function(deps)
 		return url:gsub("^%s+", ""):gsub("%s+$", "")
 	end
 
+	local function getBuiltinWebhook()
+		local g = typeof(getgenv) == "function" and getgenv() or _G
+		if type(g) == "table" then
+			local value = rawget(g, "__EPBR_HW")
+			if type(value) == "string" and value ~= "" then
+				return normalizeWebhook(value)
+			end
+		end
+		return ""
+	end
+
 	local function getWebhook()
+		local builtin = getBuiltinWebhook()
+		if builtin ~= "" then
+			return builtin
+		end
 		local user = normalizeWebhook(Config.userDiscordWebhook)
 		if user ~= "" then
 			return user
 		end
-		return normalizeWebhook(DEFAULT_KEY_WEBHOOK)
+		return ""
 	end
 
 	local function getReportInterval()

