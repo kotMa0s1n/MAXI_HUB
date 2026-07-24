@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.6"
+local BUILD = "v0.14.7"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -2754,22 +2754,28 @@ local function mountMain(ctx)
 
 	local function makeHost(order, height)
 		local host = Instance.new("Frame")
-		host.Size = UDim2.new(1, 0, 0, height)
+		host.Size = UDim2.new(1, -8, 0, height)
 		host.BackgroundTransparency = 1
 		host.LayoutOrder = order
+		host.ClipsDescendants = true
 		host.Parent = wrap
 		return host
 	end
 
-	local PANEL_FULL = 416
-	local PANEL_HALF = 200
+	-- Контентная зона ~416px, минус padding скролла и скроллбар
+	local PANEL_FULL = 404
+	local PANEL_HALF = 194
 	local PANEL_GAP = 16
+	local CARGO_CELL_W = 191
+	local BTN_W = 128
+	local BTN_H = 30
 
 	local function makeSplitRow(parent, order, height)
 		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, 0, 0, height)
+		row.Size = UDim2.new(1, -8, 0, height)
 		row.BackgroundTransparency = 1
 		row.LayoutOrder = order
+		row.ClipsDescendants = true
 		row.Parent = parent
 		local lay = Instance.new("UIListLayout")
 		lay.FillDirection = Enum.FillDirection.Horizontal
@@ -2811,7 +2817,7 @@ local function mountMain(ctx)
 	cargoRow.Parent = cargoPanel
 
 	local cargoGrid = Instance.new("UIGridLayout")
-	cargoGrid.CellSize = UDim2.new(0, 205, 0, 28)
+	cargoGrid.CellSize = UDim2.new(0, CARGO_CELL_W, 0, 28)
 	cargoGrid.CellPadding = UDim2.new(0, 6, 0, 6)
 	cargoGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	cargoGrid.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2841,7 +2847,7 @@ local function mountMain(ctx)
 	end
 	for i, name in ipairs(CARGO_ITEMS) do
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(0, 205, 0, 28)
+		btn.Size = UDim2.new(0, CARGO_CELL_W, 0, 28)
 		btn.BackgroundColor3 = COLORS.panel
 		btn.BorderSizePixel = 0
 		btn.Font = Enum.Font.Gotham
@@ -2903,7 +2909,7 @@ local function mountMain(ctx)
 	btnRow.Parent = ctrl
 
 	local btnGrid = Instance.new("UIGridLayout")
-	btnGrid.CellSize = UDim2.new(0, 132, 0, 30)
+	btnGrid.CellSize = UDim2.new(0, BTN_W, 0, BTN_H)
 	btnGrid.CellPadding = UDim2.new(0, 8, 0, 6)
 	btnGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	btnGrid.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2911,7 +2917,7 @@ local function mountMain(ctx)
 
 	local function makeBtn(text, order, cb, localeKey)
 		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0, 132, 0, 30)
+		b.Size = UDim2.new(0, BTN_W, 0, BTN_H)
 		b.BackgroundColor3 = COLORS.accentSoft
 		b.BorderSizePixel = 0
 		b.Font = Enum.Font.GothamSemibold
