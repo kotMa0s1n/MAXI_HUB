@@ -1,6 +1,11 @@
 --[[ El Paso, Texas: Border Roleplay
   Запуск:
-  loadstring(readfile("el-paso-br/RUN.lua"))()
+  local _src = readfile("el-paso-br/RUN.lua")
+  local _fn = loadstring or load
+  assert(type(_fn) == "function", "no loadstring/load")
+  local _chunk, _err = _fn(_src, "@RUN.lua")
+  assert(type(_chunk) == "function", tostring(_err))
+  _chunk()
 
   Авто-выгрузка при повторном запуске встроена в el-paso-br.lua
 ]]
