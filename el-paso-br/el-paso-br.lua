@@ -1,0 +1,5143 @@
+-- El Paso, Texas: Border Roleplay
+-- PlaceId: 14502598369
+-- Run: loadstring(readfile("el-paso-br/RUN.lua"))()
+
+local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
+local PLACE_ID = 14502598369
+local BUILD = "v0.14.0"
+
+local Players = game:GetService("Players")
+local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
+
+local player
+local playerGui
+local EpbrLogic
+
+local genv
+if typeof(getgenv) == "function" then
+	genv = getgenv()
+else
+	genv = _G
+end
+genv.MaxiHubSkipKey = true
+
+local function ensurePlayer()
+	if player and playerGui and playerGui.Parent then
+		return true
+	end
+	if not game:IsLoaded() then
+		game.Loaded:Wait()
+	end
+	player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+	playerGui = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 30)
+	return playerGui ~= nil
+end
+
+-- ===== embedded: maxi-hub-ui.lua =====
+local MaxiHubUI = (function()
+--[[
+  MAXI HUB UI Library (maxi-hub-ui.lua)
+  ====================================
+
+  ⛔ НЕ РЕДАКТИРОВАТЬ в папках игр (maxi-hub-scr, maxi-hub-<game>, …).
+  Копируй файл из Z:\Desktop\i.s.m\Script\maxi-hub\ как есть.
+  Правки UI-стиля — только в этом каноническом файле в maxi-hub\.
+
+  Габариты вкладок и панелей: maxi-hub\.cursor\rules\ui-layout.mdc
+
+  Загрузка:
+    local MaxiHubUI = loadstring(readfile("maxi-hub-ui.lua"))()
+    local Window = MaxiHubUI.CreateLib("MAXI HUB", { guiName = "UniqueName" })
+    Window:Finalize()
+]]
+
+do
+	local genv = typeof(getgenv) == "function" and getgenv() or _G
+	if genv.MaxiHubSkipKey ~= true then
+		local Auth = genv._MaxiHubAuthLib
+		if not Auth then
+			local src
+			local paths = { "maxi-hub/maxi-hub-auth.lua", "maxi-hub-auth.lua" }
+			if type(genv.MaxiHubLocalRoot) == "string" and genv.MaxiHubLocalRoot ~= "" then
+				table.insert(paths, 1, genv.MaxiHubLocalRoot .. "/maxi-hub-auth.lua")
+			end
+			if typeof(readfile) == "function" and typeof(isfile) == "function" then
+				for _, p in ipairs(paths) do
+					if isfile(p) then
+						src = readfile(p)
+						break
+					end
+				end
+			end
+			if not src then
+				local base = genv.MaxiHubOfficialRaw or genv.MaxiHubRemoteBase
+				if base and typeof(game.HttpGet) == "function" then
+					pcall(function()
+						src = game:HttpGet(base .. "maxi-hub-auth.lua?v=" .. tostring(os.time()), true)
+					end)
+				end
+			end
+			if not src then
+				error("[MAXI HUB] Нет maxi-hub-auth.lua (ui)")
+			end
+			local chunk, cerr = loadstring(src, "@maxi-hub-auth.lua")
+			if not chunk then
+				error("[MAXI HUB] auth compile: " .. tostring(cerr))
+			end
+			local okAuth, lib = pcall(chunk)
+			if not okAuth then
+				error("[MAXI HUB] auth: " .. tostring(lib))
+			end
+			Auth = lib
+			genv._MaxiHubAuthLib = Auth
+		end
+		Auth.guard("ui")
+	end
+end
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local MaxiHubUI = {}
+MaxiHubUI.VERSION = "1.0.0"
+
+function MaxiHubUI.create(config)
+	config = config or {}
+
+	local player = config.player or Players.LocalPlayer
+	local playerGui = config.playerGui or player:WaitForChild("PlayerGui")
+	local genv = config.genv or (typeof(getgenv) == "function" and getgenv() or _G)
+
+	local WINDOW_W = config.windowWidth or 580
+	local WINDOW_H = config.windowHeight or 540
+	local SIDEBAR_W = config.sidebarWidth or 136
+	local DEFAULT_POS = config.defaultPosition or UDim2.new(0, 16, 0.5, -270)
+	local savedPos = config.savedPosition
+	local guiName = config.guiName or "MaxiHub"
+	local titleText = config.title or "MAXI HUB"
+	local titleHintText = config.titleHint or "RightCtrl — скрыть"
+	local versionText = config.version or ""
+	local tabs = config.tabs
+	if tabs == nil then
+		tabs = {
+			{ name = "Главная", title = "Главная", subtitle = "" },
+		}
+	end
+	local onSavePosition = config.onSavePosition
+	local onDestroy = config.onDestroy
+	local onCameraStart = config.onCameraStart
+	local keyStatusText = config.keyStatusText
+	local displayOrder = config.displayOrder or 999
+	local currentLanguage = config.language or "ru"
+	local onLanguageChange = config.onLanguageChange
+	local registerLocale = config.registerLocale
+	local hideHintMessage = config.hideHintText or "RightCtrl — open menu"
+	local onMobileFarmStop = config.onMobileFarmStop
+	local onMobileMenuToggle = config.onMobileMenuToggle
+	local activeTabId = 1
+
+	local function isMobileDevice()
+		local platform = UserInputService:GetPlatform()
+		return platform == Enum.Platform.IOS
+			or platform == Enum.Platform.Android
+			or UserInputService.TouchEnabled
+	end
+
+	local mobileMode = config.forceMobile == true or isMobileDevice()
+	if mobileMode then
+		local cam = workspace.CurrentCamera
+		if cam then
+			local vp = cam.ViewportSize
+			WINDOW_W = math.clamp(math.floor(vp.X * 0.94), 320, 640)
+			WINDOW_H = math.clamp(math.floor(vp.Y * 0.82), 380, 720)
+		end
+	end
+
+	local COLORS = config.colors or {
+		bg = Color3.fromRGB(14, 16, 18),
+		sidebar = Color3.fromRGB(20, 24, 26),
+		panel = Color3.fromRGB(26, 30, 33),
+		accent = Color3.fromRGB(0, 198, 178),
+		accentSoft = Color3.fromRGB(0, 158, 142),
+		tabIdle = Color3.fromRGB(24, 30, 32),
+		text = Color3.fromRGB(242, 246, 248),
+		muted = Color3.fromRGB(125, 135, 142),
+		green = Color3.fromRGB(52, 199, 89),
+		red = Color3.fromRGB(220, 75, 75),
+		line = Color3.fromRGB(40, 48, 52),
+		status = Color3.fromRGB(120, 235, 215),
+		toggleOff = Color3.fromRGB(42, 48, 54),
+		card = Color3.fromRGB(22, 26, 29),
+	}
+
+	local contentPages = {}
+	local tabButtons = {}
+	local tabMeta = {}
+	local pageTitle
+	local pageSubtitle
+	local screenGui
+	local uiRoot
+	local uiBody
+	local titleBar
+	local titleFix
+	local title
+	local titleHint
+	local hideBtn
+	local extraInputHandler
+
+	local function addCorner(parent, r)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, r or 8)
+		c.Parent = parent
+	end
+
+	local function makeCollapsibleSection(parent, text, order, localeKey, startCollapsed)
+		local section = Instance.new("Frame")
+		section.Size = UDim2.new(1, 0, 0, 0)
+		section.AutomaticSize = Enum.AutomaticSize.Y
+		section.BackgroundTransparency = 1
+		section.LayoutOrder = order
+		section.Parent = parent
+
+		local sectionLayout = Instance.new("UIListLayout")
+		sectionLayout.Padding = UDim.new(0, 4)
+		sectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		sectionLayout.Parent = section
+
+		local header = Instance.new("TextButton")
+		header.Size = UDim2.new(1, 0, 0, 28)
+		header.BackgroundTransparency = 1
+		header.BorderSizePixel = 0
+		header.Text = ""
+		header.AutoButtonColor = false
+		header.LayoutOrder = 1
+		header.Parent = section
+
+		local arrow = Instance.new("TextLabel")
+		arrow.Size = UDim2.new(0, 16, 1, 0)
+		arrow.BackgroundTransparency = 1
+		arrow.Font = Enum.Font.GothamBold
+		arrow.TextSize = 10
+		arrow.TextColor3 = COLORS.muted
+		arrow.TextXAlignment = Enum.TextXAlignment.Left
+		arrow.Text = "▼"
+		arrow.Parent = header
+
+		local titleLbl = Instance.new("TextLabel")
+		titleLbl.Size = UDim2.new(1, -18, 1, 0)
+		titleLbl.Position = UDim2.new(0, 16, 0, 0)
+		titleLbl.BackgroundTransparency = 1
+		titleLbl.Font = Enum.Font.GothamBold
+		titleLbl.TextSize = 11
+		titleLbl.TextColor3 = COLORS.muted
+		titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+		titleLbl.Text = string.upper(text)
+		titleLbl.Parent = header
+		if registerLocale and localeKey then
+			registerLocale(titleLbl, localeKey)
+		end
+
+		local body = Instance.new("Frame")
+		body.Size = UDim2.new(1, 0, 0, 0)
+		body.AutomaticSize = Enum.AutomaticSize.Y
+		body.BackgroundTransparency = 1
+		body.LayoutOrder = 2
+		body.Parent = section
+
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 6)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Parent = body
+
+		local collapsed = startCollapsed == true
+		local function paint()
+			arrow.Text = collapsed and "▶" or "▼"
+			body.Visible = not collapsed
+		end
+
+		header.MouseButton1Click:Connect(function()
+			collapsed = not collapsed
+			paint()
+		end)
+		paint()
+		return body
+	end
+
+	local function makeDraggable(frame, handle)
+		local dragging = false
+		local dragStart
+		local startPos
+
+		handle.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1
+				and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+		end)
+
+		local moveConn = UserInputService.InputChanged:Connect(function(input)
+			if not dragging then return end
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement
+				and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			local d = input.Position - dragStart
+			frame.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + d.X,
+				startPos.Y.Scale, startPos.Y.Offset + d.Y
+			)
+		end)
+
+		local endConn = UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1
+				or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+				if typeof(onSavePosition) == "function" then
+					onSavePosition()
+				end
+			end
+		end)
+
+		frame.Destroying:Connect(function()
+			moveConn:Disconnect()
+			endConn:Disconnect()
+		end)
+	end
+
+	local function switchTab(id)
+		activeTabId = id
+		for i, page in ipairs(contentPages) do
+			page.Visible = i == id
+			tabButtons[i].BackgroundColor3 = i == id and COLORS.accent or COLORS.tabIdle
+			tabButtons[i].TextColor3 = i == id and COLORS.bg or COLORS.muted
+		end
+		if pageTitle then
+			pageTitle.Text = tabMeta[id] and tabMeta[id].title or titleText
+		end
+		if pageSubtitle then
+			pageSubtitle.Text = tabMeta[id] and tabMeta[id].subtitle or ""
+		end
+	end
+
+	local function makeSectionTitle(parent, text, order, localeKey)
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, 20)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = order
+		row.Parent = parent
+
+		local bar = Instance.new("Frame")
+		bar.Size = UDim2.new(0, 3, 0, 12)
+		bar.Position = UDim2.new(0, 0, 0.5, -6)
+		bar.BackgroundColor3 = COLORS.accent
+		bar.BorderSizePixel = 0
+		bar.Parent = row
+		addCorner(bar, 2)
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, -10, 1, 0)
+		lbl.Position = UDim2.new(0, 10, 0, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.GothamBold
+		lbl.TextSize = 11
+		lbl.TextColor3 = COLORS.muted
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Text = string.upper(text)
+		lbl.Parent = row
+		if registerLocale and localeKey then
+			registerLocale(lbl, localeKey)
+		end
+		return lbl
+	end
+
+	local function makeToggle(parent, y, label, initial, onChange, debounce, localeKey)
+		local row = Instance.new("TextButton")
+		row.Size = UDim2.new(1, 0, 0, 38)
+		row.Position = UDim2.new(0, 0, 0, y)
+		row.BackgroundColor3 = COLORS.panel
+		row.BorderSizePixel = 0
+		row.Text = ""
+		row.AutoButtonColor = false
+		row.Parent = parent
+		addCorner(row, 8)
+
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(1, -56, 1, 0)
+		name.Position = UDim2.new(0, 12, 0, 0)
+		name.BackgroundTransparency = 1
+		name.Font = Enum.Font.Gotham
+		name.TextSize = 13
+		name.TextColor3 = COLORS.text
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Text = label
+		name.Parent = row
+		if registerLocale and localeKey then
+			registerLocale(name, localeKey)
+		end
+
+		local track = Instance.new("Frame")
+		track.Size = UDim2.new(0, 40, 0, 20)
+		track.Position = UDim2.new(1, -48, 0.5, -10)
+		track.BackgroundColor3 = initial and COLORS.accent or COLORS.toggleOff
+		track.BorderSizePixel = 0
+		track.Parent = row
+		addCorner(track, 10)
+
+		local knob = Instance.new("Frame")
+		knob.Size = UDim2.new(0, 16, 0, 16)
+		knob.Position = initial and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+		knob.BackgroundColor3 = COLORS.text
+		knob.BorderSizePixel = 0
+		knob.Parent = track
+		addCorner(knob, 8)
+
+		local state = initial
+		local lastClick = 0
+
+		local function paint()
+			track.BackgroundColor3 = state and COLORS.accent or COLORS.toggleOff
+			TweenService:Create(knob, TweenInfo.new(0.12), {
+				Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
+			}):Play()
+		end
+
+		local function setState(value, silent)
+			state = value
+			paint()
+			if not silent and onChange then
+				onChange(state)
+			end
+		end
+
+		row.MouseButton1Click:Connect(function()
+			if debounce and tick() - lastClick < debounce then return end
+			lastClick = tick()
+			setState(not state)
+		end)
+
+		paint()
+		return setState, function() return state end
+	end
+
+	local function makeSlider(parent, y, label, min, max, initial, onChange, localeKey)
+		local box = Instance.new("Frame")
+		box.Size = UDim2.new(1, 0, 0, 52)
+		box.Position = UDim2.new(0, 0, 0, y)
+		box.BackgroundColor3 = COLORS.panel
+		box.BorderSizePixel = 0
+		box.Parent = parent
+		addCorner(box, 8)
+
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(0.65, 0, 0, 20)
+		name.Position = UDim2.new(0, 12, 0, 6)
+		name.BackgroundTransparency = 1
+		name.Font = Enum.Font.Gotham
+		name.TextSize = 12
+		name.TextColor3 = COLORS.text
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Text = label
+		name.Parent = box
+		if registerLocale and localeKey then
+			registerLocale(name, localeKey)
+		end
+
+		local valueLbl = Instance.new("TextLabel")
+		valueLbl.Size = UDim2.new(0.35, -12, 0, 20)
+		valueLbl.Position = UDim2.new(0.65, 0, 0, 6)
+		valueLbl.BackgroundTransparency = 1
+		valueLbl.Font = Enum.Font.GothamBold
+		valueLbl.TextSize = 12
+		valueLbl.TextColor3 = COLORS.accent
+		valueLbl.TextXAlignment = Enum.TextXAlignment.Right
+		valueLbl.Parent = box
+
+		local track = Instance.new("TextButton")
+		track.Size = UDim2.new(1, -24, 0, 8)
+		track.Position = UDim2.new(0, 12, 1, -18)
+		track.BackgroundColor3 = COLORS.line
+		track.BorderSizePixel = 0
+		track.Text = ""
+		track.AutoButtonColor = false
+		track.Parent = box
+		addCorner(track, 4)
+
+		local fill = Instance.new("Frame")
+		fill.Size = UDim2.new(0, 0, 1, 0)
+		fill.BackgroundColor3 = COLORS.accent
+		fill.BorderSizePixel = 0
+		fill.Parent = track
+		addCorner(fill, 4)
+
+		local val = initial
+		local function paint()
+			local alpha = (val - min) / math.max(max - min, 0.001)
+			alpha = math.clamp(alpha, 0, 1)
+			fill.Size = UDim2.new(alpha, 0, 1, 0)
+			local decimals = (max - min) <= 3 and 1 or 0
+			valueLbl.Text = decimals == 0 and tostring(math.floor(val)) or string.format("%.1f", val)
+		end
+
+		local function setFromX(x)
+			local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+			val = min + (max - min) * rel
+			val = math.floor(val * 10 + 0.5) / 10
+			paint()
+			onChange(val)
+		end
+
+		track.MouseButton1Down:Connect(function(x)
+			setFromX(x)
+			local conn
+			conn = UserInputService.InputChanged:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseMovement then
+					setFromX(input.Position.X)
+				end
+			end)
+			local endConn
+			endConn = UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					conn:Disconnect()
+					endConn:Disconnect()
+				end
+			end)
+		end)
+
+		paint()
+		return function(v) val = v; paint() end
+	end
+
+	local function makeFlowSlider(parent, label, min, max, initial, onChange, layoutOrder, localeKey)
+		local box = Instance.new("Frame")
+		box.Size = UDim2.new(1, 0, 0, 52)
+		box.BackgroundColor3 = COLORS.panel
+		box.BorderSizePixel = 0
+		box.LayoutOrder = layoutOrder or 0
+		box.Parent = parent
+		addCorner(box, 8)
+
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(0.65, 0, 0, 20)
+		name.Position = UDim2.new(0, 12, 0, 6)
+		name.BackgroundTransparency = 1
+		name.Font = Enum.Font.Gotham
+		name.TextSize = 12
+		name.TextColor3 = COLORS.text
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Text = label
+		name.Parent = box
+		if registerLocale and localeKey then
+			registerLocale(name, localeKey)
+		end
+
+		local valueLbl = Instance.new("TextLabel")
+		valueLbl.Size = UDim2.new(0.35, -12, 0, 20)
+		valueLbl.Position = UDim2.new(0.65, 0, 0, 6)
+		valueLbl.BackgroundTransparency = 1
+		valueLbl.Font = Enum.Font.GothamBold
+		valueLbl.TextSize = 12
+		valueLbl.TextColor3 = COLORS.accent
+		valueLbl.TextXAlignment = Enum.TextXAlignment.Right
+		valueLbl.Parent = box
+
+		local track = Instance.new("TextButton")
+		track.Size = UDim2.new(1, -24, 0, 8)
+		track.Position = UDim2.new(0, 12, 1, -18)
+		track.BackgroundColor3 = COLORS.line
+		track.BorderSizePixel = 0
+		track.Text = ""
+		track.AutoButtonColor = false
+		track.Parent = box
+		addCorner(track, 4)
+
+		local fill = Instance.new("Frame")
+		fill.Size = UDim2.new(0, 0, 1, 0)
+		fill.BackgroundColor3 = COLORS.accent
+		fill.BorderSizePixel = 0
+		fill.Parent = track
+		addCorner(fill, 4)
+
+		local val = initial
+		local function paint()
+			local alpha = (val - min) / math.max(max - min, 0.001)
+			alpha = math.clamp(alpha, 0, 1)
+			fill.Size = UDim2.new(alpha, 0, 1, 0)
+			local decimals = (max - min) <= 3 and 1 or 0
+			valueLbl.Text = decimals == 0 and tostring(math.floor(val)) or string.format("%.1f", val)
+		end
+
+		local function setFromX(x)
+			local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+			val = min + (max - min) * rel
+			val = math.floor(val * 10 + 0.5) / 10
+			paint()
+			onChange(val)
+		end
+
+		track.MouseButton1Down:Connect(function(x)
+			setFromX(x)
+			local conn
+			conn = UserInputService.InputChanged:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseMovement then
+					setFromX(input.Position.X)
+				end
+			end)
+			local endConn
+			endConn = UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					conn:Disconnect()
+					endConn:Disconnect()
+				end
+			end)
+		end)
+
+		paint()
+		return function(v) val = v; paint() end
+	end
+
+	local function makeScrollPage(parent)
+		local scroll = Instance.new("ScrollingFrame")
+		scroll.Size = UDim2.new(1, 0, 1, 0)
+		scroll.BackgroundTransparency = 1
+		scroll.BorderSizePixel = 0
+		scroll.ScrollBarThickness = 4
+		scroll.ScrollBarImageColor3 = COLORS.accent
+		scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scroll.Parent = parent
+
+		local layout = Instance.new("UIListLayout")
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding = UDim.new(0, 8)
+		layout.Parent = scroll
+
+		local pad = Instance.new("UIPadding")
+		pad.PaddingTop = UDim.new(0, 4)
+		pad.PaddingBottom = UDim.new(0, 12)
+		pad.PaddingLeft = UDim.new(0, 2)
+		pad.PaddingRight = UDim.new(0, 6)
+		pad.Parent = scroll
+
+		return scroll
+	end
+
+	local function makeListWrap(scroll)
+		local wrap = Instance.new("Frame")
+		wrap.Size = UDim2.new(1, 0, 0, 0)
+		wrap.AutomaticSize = Enum.AutomaticSize.Y
+		wrap.BackgroundTransparency = 1
+		wrap.LayoutOrder = 1
+		wrap.Parent = scroll
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 6)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Parent = wrap
+		return wrap
+	end
+
+	local function makeFlowPanel(parent, title, width, height, posX, posY, bodyOffsetY, localeKey)
+		local panel = Instance.new("Frame")
+		panel.Size = UDim2.new(0, width, 0, height)
+		panel.Position = UDim2.new(0, posX or 0, 0, posY or 0)
+		panel.BackgroundColor3 = COLORS.card
+		panel.BorderSizePixel = 0
+		panel.Parent = parent
+		addCorner(panel, 10)
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = COLORS.line
+		stroke.Thickness = 1
+		stroke.Transparency = 0.35
+		stroke.Parent = panel
+
+		local head = Instance.new("TextLabel")
+		head.Size = UDim2.new(1, -20, 0, 22)
+		head.Position = UDim2.new(0, 10, 0, 10)
+		head.BackgroundTransparency = 1
+		head.Font = Enum.Font.GothamBold
+		head.TextSize = 12
+		head.TextColor3 = COLORS.text
+		head.TextXAlignment = Enum.TextXAlignment.Left
+		head.Text = title
+		head.Parent = panel
+		if registerLocale and localeKey then
+			registerLocale(head, localeKey)
+		end
+
+		local bodyY = bodyOffsetY or 36
+		local body = Instance.new("Frame")
+		body.Size = UDim2.new(1, -16, 1, -bodyY - 8)
+		body.Position = UDim2.new(0, 8, 0, bodyY)
+		body.BackgroundTransparency = 1
+		body.Parent = panel
+
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 6)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Parent = body
+
+		return body
+	end
+
+	local function makeStatRow(parent, label, layoutOrder, localeKey)
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, 22)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = layoutOrder or 0
+		row.Parent = parent
+
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(0.55, 0, 1, 0)
+		name.BackgroundTransparency = 1
+		name.Font = Enum.Font.Gotham
+		name.TextSize = 11
+		name.TextColor3 = COLORS.muted
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Text = label
+		name.Parent = row
+		if registerLocale and localeKey then
+			registerLocale(name, localeKey)
+		end
+
+		local value = Instance.new("TextLabel")
+		value.Size = UDim2.new(0.45, -4, 1, 0)
+		value.Position = UDim2.new(0.55, 0, 0, 0)
+		value.BackgroundTransparency = 1
+		value.Font = Enum.Font.GothamBold
+		value.TextSize = 11
+		value.TextColor3 = COLORS.text
+		value.TextXAlignment = Enum.TextXAlignment.Right
+		value.Text = "—"
+		value.Parent = row
+
+		return value
+	end
+
+	local function makeFlowToggle(parent, label, initial, onChange, layoutOrder, debounce, localeKey)
+		local cardStyle = parent:GetAttribute("MaxiHubCardToggles") == true
+		local row = Instance.new("TextButton")
+		row.Size = UDim2.new(1, 0, 0, cardStyle and 38 or 34)
+		row.BackgroundTransparency = cardStyle and 0 or 1
+		row.BackgroundColor3 = cardStyle and COLORS.panel or COLORS.bg
+		row.BorderSizePixel = 0
+		row.Text = ""
+		row.AutoButtonColor = false
+		row.LayoutOrder = layoutOrder or 0
+		row.Parent = parent
+		if cardStyle then
+			addCorner(row, 8)
+		end
+
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(1, -54, 1, 0)
+		name.Position = UDim2.new(0, cardStyle and 12 or 4, 0, 0)
+		name.BackgroundTransparency = 1
+		name.Font = Enum.Font.Gotham
+		name.TextSize = 12
+		name.TextColor3 = COLORS.text
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Text = label
+		name.Parent = row
+		if registerLocale and localeKey then
+			registerLocale(name, localeKey)
+		end
+
+		local track = Instance.new("Frame")
+		track.Size = UDim2.new(0, 44, 0, 22)
+		track.Position = UDim2.new(1, -48, 0.5, -11)
+		track.BackgroundColor3 = initial and COLORS.accent or COLORS.toggleOff
+		track.BorderSizePixel = 0
+		track.Parent = row
+		addCorner(track, 11)
+
+		local knob = Instance.new("Frame")
+		knob.Size = UDim2.new(0, 18, 0, 18)
+		knob.Position = initial and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+		knob.BackgroundColor3 = COLORS.text
+		knob.BorderSizePixel = 0
+		knob.Parent = track
+		addCorner(knob, 9)
+
+		local state = initial
+		local lastClick = 0
+
+		local function paint()
+			track.BackgroundColor3 = state and COLORS.accent or COLORS.toggleOff
+			TweenService:Create(knob, TweenInfo.new(0.12), {
+				Position = state and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9),
+			}):Play()
+		end
+
+		local function setState(value, silent)
+			state = value
+			paint()
+			if not silent and onChange then
+				onChange(state)
+			end
+		end
+
+		row.MouseButton1Click:Connect(function()
+			if debounce and tick() - lastClick < debounce then return end
+			lastClick = tick()
+			setState(not state)
+		end)
+
+		paint()
+		return setState, function() return state end
+	end
+
+	-- ===== СБОРКА ОБОЛОЧКИ (окно + сайдбар + вкладки) =====
+	genv._MaxiHubGuiRegistry = genv._MaxiHubGuiRegistry or {}
+	genv._MaxiHubInputConn = genv._MaxiHubInputConn or {}
+
+	local prevGui = genv._MaxiHubGuiRegistry[guiName]
+	if prevGui then
+		pcall(function()
+			if typeof(prevGui) == "Instance" and prevGui.Parent then
+				prevGui:Destroy()
+			end
+		end)
+		genv._MaxiHubGuiRegistry[guiName] = nil
+	end
+
+	local prevInput = genv._MaxiHubInputConn[guiName]
+	if prevInput then
+		pcall(function() prevInput:Disconnect() end)
+		genv._MaxiHubInputConn[guiName] = nil
+	end
+
+	local oldGui = playerGui:FindFirstChild(guiName)
+	if oldGui then oldGui:Destroy() end
+
+	screenGui = Instance.new("ScreenGui")
+	screenGui.Name = guiName
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.DisplayOrder = displayOrder
+	screenGui.IgnoreGuiInset = true
+	screenGui.Parent = playerGui
+	genv._MaxiHubGuiRegistry[guiName] = screenGui
+
+	if typeof(onCameraStart) == "function" then
+		pcall(onCameraStart)
+	end
+
+	screenGui.Destroying:Connect(function()
+		genv._MaxiHubGuiRegistry[guiName] = nil
+		local conn = genv._MaxiHubInputConn[guiName]
+		if conn then
+			pcall(function() conn:Disconnect() end)
+			genv._MaxiHubInputConn[guiName] = nil
+		end
+		if typeof(onDestroy) == "function" then
+			pcall(onDestroy)
+		end
+	end)
+
+	uiRoot = Instance.new("Frame")
+	uiRoot.Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H)
+	uiRoot.BackgroundColor3 = COLORS.bg
+	uiRoot.BorderSizePixel = 0
+	uiRoot.Active = true
+	uiRoot.Parent = screenGui
+	uiRoot.Position = savedPos or DEFAULT_POS
+	uiRoot.ClipsDescendants = true
+	addCorner(uiRoot, 12)
+
+	local rootStroke = Instance.new("UIStroke")
+	rootStroke.Color = COLORS.accent
+	rootStroke.Thickness = 1.5
+	rootStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	rootStroke.Parent = uiRoot
+
+	titleBar = Instance.new("Frame")
+	titleBar.Size = UDim2.new(1, 0, 0, 42)
+	titleBar.BackgroundColor3 = COLORS.panel
+	titleBar.BorderSizePixel = 0
+	titleBar.Active = true
+	titleBar.Parent = uiRoot
+	addCorner(titleBar, 12)
+
+	titleFix = Instance.new("Frame")
+	titleFix.Size = UDim2.new(1, 0, 0, 10)
+	titleFix.Position = UDim2.new(0, 0, 1, -10)
+	titleFix.BackgroundColor3 = COLORS.panel
+	titleFix.BorderSizePixel = 0
+	titleFix.Parent = titleBar
+
+	title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -140, 0, 22)
+	title.Position = UDim2.new(0, 14, 0, 6)
+	title.BackgroundTransparency = 1
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 15
+	title.TextColor3 = COLORS.text
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Text = titleText
+	title.Parent = titleBar
+
+	titleHint = Instance.new("TextLabel")
+	titleHint.Size = UDim2.new(1, -140, 0, 12)
+	titleHint.Position = UDim2.new(0, 14, 1, -14)
+	titleHint.BackgroundTransparency = 1
+	titleHint.Font = Enum.Font.Gotham
+	titleHint.TextSize = 9
+	titleHint.TextColor3 = COLORS.muted
+	titleHint.TextXAlignment = Enum.TextXAlignment.Left
+	titleHint.Text = titleHintText
+	titleHint.Parent = titleBar
+
+	local langRu = Instance.new("TextButton")
+	langRu.Size = UDim2.new(0, 28, 0, 28)
+	langRu.Position = UDim2.new(1, -100, 0.5, -14)
+	langRu.BackgroundColor3 = COLORS.tabIdle
+	langRu.BorderSizePixel = 0
+	langRu.Font = Enum.Font.GothamBold
+	langRu.TextSize = 14
+	langRu.Text = "🇷🇺"
+	langRu.AutoButtonColor = false
+	langRu.Parent = titleBar
+	addCorner(langRu, 6)
+
+	local langEn = Instance.new("TextButton")
+	langEn.Size = UDim2.new(0, 28, 0, 28)
+	langEn.Position = UDim2.new(1, -68, 0.5, -14)
+	langEn.BackgroundColor3 = COLORS.tabIdle
+	langEn.BorderSizePixel = 0
+	langEn.Font = Enum.Font.GothamBold
+	langEn.TextSize = 14
+	langEn.Text = "🇬🇧"
+	langEn.AutoButtonColor = false
+	langEn.Parent = titleBar
+	addCorner(langEn, 6)
+
+	local function paintLanguageButtons()
+		local ruActive = currentLanguage == "ru"
+		langRu.BackgroundColor3 = ruActive and COLORS.accent or COLORS.tabIdle
+		langRu.TextColor3 = ruActive and COLORS.bg or COLORS.text
+		langEn.BackgroundColor3 = (not ruActive) and COLORS.accent or COLORS.tabIdle
+		langEn.TextColor3 = (not ruActive) and COLORS.bg or COLORS.text
+	end
+	paintLanguageButtons()
+
+	langRu.MouseButton1Click:Connect(function()
+		if currentLanguage == "ru" then return end
+		currentLanguage = "ru"
+		paintLanguageButtons()
+		if typeof(onLanguageChange) == "function" then
+			onLanguageChange("ru")
+		end
+	end)
+
+	langEn.MouseButton1Click:Connect(function()
+		if currentLanguage == "en" then return end
+		currentLanguage = "en"
+		paintLanguageButtons()
+		if typeof(onLanguageChange) == "function" then
+			onLanguageChange("en")
+		end
+	end)
+
+	hideBtn = Instance.new("TextButton")
+	hideBtn.Size = UDim2.new(0, 28, 0, 28)
+	hideBtn.Position = UDim2.new(1, -36, 0.5, -14)
+	hideBtn.BackgroundColor3 = COLORS.tabIdle
+	hideBtn.BorderSizePixel = 0
+	hideBtn.Font = Enum.Font.GothamBold
+	hideBtn.TextSize = 16
+	hideBtn.TextColor3 = COLORS.text
+	hideBtn.Text = "—"
+	hideBtn.AutoButtonColor = false
+	hideBtn.Parent = titleBar
+	addCorner(hideBtn, 6)
+
+	uiBody = Instance.new("Frame")
+	uiBody.Size = UDim2.new(1, -16, 1, -50)
+	uiBody.Position = UDim2.new(0, 8, 0, 46)
+	uiBody.BackgroundTransparency = 1
+	uiBody.Parent = uiRoot
+
+	local sidebar = Instance.new("Frame")
+	sidebar.Size = UDim2.new(0, SIDEBAR_W, 1, 0)
+	sidebar.BackgroundColor3 = COLORS.sidebar
+	sidebar.BorderSizePixel = 0
+	sidebar.Parent = uiBody
+	addCorner(sidebar, 10)
+
+	local sideTop = Instance.new("ScrollingFrame")
+	sideTop.Size = UDim2.new(1, 0, 1, -110)
+	sideTop.Position = UDim2.new(0, 0, 0, 0)
+	sideTop.BackgroundTransparency = 1
+	sideTop.BorderSizePixel = 0
+	sideTop.ScrollBarThickness = 3
+	sideTop.ScrollBarImageColor3 = COLORS.accent
+	sideTop.ScrollingDirection = Enum.ScrollingDirection.Y
+	sideTop.CanvasSize = UDim2.new(0, 0, 0, 0)
+	sideTop.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	sideTop.Parent = sidebar
+
+	local sideLayout = Instance.new("UIListLayout")
+	sideLayout.Padding = UDim.new(0, 6)
+	sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	sideLayout.Parent = sideTop
+
+	local sidePad = Instance.new("UIPadding")
+	sidePad.PaddingTop = UDim.new(0, 8)
+	sidePad.PaddingBottom = UDim.new(0, 8)
+	sidePad.PaddingLeft = UDim.new(0, 0)
+	sidePad.PaddingRight = UDim.new(0, 4)
+	sidePad.Parent = sideTop
+
+	local userCard = Instance.new("Frame")
+	userCard.Size = UDim2.new(1, -12, 0, 104)
+	userCard.Position = UDim2.new(0, 6, 1, -110)
+	userCard.BackgroundColor3 = COLORS.card
+	userCard.BorderSizePixel = 0
+	userCard.Parent = sidebar
+	addCorner(userCard, 10)
+
+	local userStroke = Instance.new("UIStroke")
+	userStroke.Color = COLORS.line
+	userStroke.Thickness = 1
+	userStroke.Transparency = 0.4
+	userStroke.Parent = userCard
+
+	local userAvatar = Instance.new("ImageLabel")
+	userAvatar.Size = UDim2.new(0, 36, 0, 36)
+	userAvatar.Position = UDim2.new(0, 8, 0.5, -18)
+	userAvatar.BackgroundColor3 = COLORS.panel
+	userAvatar.BorderSizePixel = 0
+	userAvatar.Parent = userCard
+	addCorner(userAvatar, 18)
+
+	local userName = Instance.new("TextLabel")
+	userName.Size = UDim2.new(1, -54, 0, 16)
+	userName.Position = UDim2.new(0, 50, 0, 10)
+	userName.BackgroundTransparency = 1
+	userName.Font = Enum.Font.GothamBold
+	userName.TextSize = 11
+	userName.TextColor3 = COLORS.text
+	userName.TextXAlignment = Enum.TextXAlignment.Left
+	userName.TextTruncate = Enum.TextTruncate.AtEnd
+	userName.Text = player.DisplayName
+	userName.Parent = userCard
+
+	local userKeyCaption = Instance.new("TextLabel")
+	userKeyCaption.Size = UDim2.new(1, -54, 0, 12)
+	userKeyCaption.Position = UDim2.new(0, 50, 0, 28)
+	userKeyCaption.BackgroundTransparency = 1
+	userKeyCaption.Font = Enum.Font.Gotham
+	userKeyCaption.TextSize = 8
+	userKeyCaption.TextColor3 = COLORS.muted
+	userKeyCaption.TextXAlignment = Enum.TextXAlignment.Left
+	userKeyCaption.Text = "Ключ активации"
+	userKeyCaption.Parent = userCard
+	if registerLocale then
+		registerLocale(userKeyCaption, "key_activation_label")
+	end
+
+	local userKey = Instance.new("TextLabel")
+	userKey.Size = UDim2.new(1, -54, 0, 22)
+	userKey.Position = UDim2.new(0, 50, 0, 42)
+	userKey.BackgroundTransparency = 1
+	userKey.Font = Enum.Font.Gotham
+	userKey.TextSize = 9
+	userKey.TextColor3 = COLORS.muted
+	userKey.TextXAlignment = Enum.TextXAlignment.Left
+	userKey.TextYAlignment = Enum.TextYAlignment.Top
+	userKey.TextWrapped = true
+	local function refreshKeyStatus()
+		if typeof(keyStatusText) == "function" then
+			userKey.Text = keyStatusText() or ""
+		end
+	end
+	if typeof(keyStatusText) == "function" then
+		refreshKeyStatus()
+	else
+		userKey.Visible = false
+		userKeyCaption.Visible = false
+		userName.Position = UDim2.new(0, 50, 0, 16)
+	end
+	userKey.Parent = userCard
+
+	local userVersion = Instance.new("TextLabel")
+	userVersion.Size = UDim2.new(1, -54, 0, 14)
+	userVersion.Position = UDim2.new(0, 50, 1, -18)
+	userVersion.BackgroundTransparency = 1
+	userVersion.Font = Enum.Font.GothamBold
+	userVersion.TextSize = 9
+	userVersion.TextColor3 = COLORS.accent
+	userVersion.TextXAlignment = Enum.TextXAlignment.Left
+	userVersion.TextYAlignment = Enum.TextYAlignment.Bottom
+	userVersion.Text = versionText
+	userVersion.Visible = versionText ~= ""
+	userVersion.Parent = userCard
+
+	task.spawn(function()
+		local ok, thumb = pcall(function()
+			return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+		end)
+		if ok and thumb then
+			userAvatar.Image = thumb
+		end
+		refreshKeyStatus()
+	end)
+
+	local contentOffset = SIDEBAR_W + 10
+	local contentHost = Instance.new("Frame")
+	contentHost.Size = UDim2.new(1, -(contentOffset + 2), 1, 0)
+	contentHost.Position = UDim2.new(0, contentOffset, 0, 0)
+	contentHost.BackgroundTransparency = 1
+	contentHost.ClipsDescendants = true
+	contentHost.Parent = uiBody
+
+	local contentHeader = Instance.new("Frame")
+	contentHeader.Size = UDim2.new(1, 0, 0, 48)
+	contentHeader.BackgroundTransparency = 1
+	contentHeader.Parent = contentHost
+
+	pageTitle = Instance.new("TextLabel")
+	pageTitle.Size = UDim2.new(1, -8, 0, 22)
+	pageTitle.BackgroundTransparency = 1
+	pageTitle.Font = Enum.Font.GothamBold
+	pageTitle.TextSize = 16
+	pageTitle.TextColor3 = COLORS.text
+	pageTitle.TextXAlignment = Enum.TextXAlignment.Left
+	pageTitle.Text = tabs[1] and tabs[1].title or "Главная"
+	pageTitle.Parent = contentHeader
+
+	pageSubtitle = Instance.new("TextLabel")
+	pageSubtitle.Size = UDim2.new(1, -8, 0, 16)
+	pageSubtitle.Position = UDim2.new(0, 0, 0, 24)
+	pageSubtitle.BackgroundTransparency = 1
+	pageSubtitle.Font = Enum.Font.Gotham
+	pageSubtitle.TextSize = 10
+	pageSubtitle.TextColor3 = COLORS.muted
+	pageSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+	pageSubtitle.Text = tabs[1] and tabs[1].subtitle or ""
+	pageSubtitle.Parent = contentHeader
+
+	local pagesHost = Instance.new("Frame")
+	pagesHost.Size = UDim2.new(1, 0, 1, -52)
+	pagesHost.Position = UDim2.new(0, 0, 0, 52)
+	pagesHost.BackgroundTransparency = 1
+	pagesHost.ClipsDescendants = true
+	pagesHost.Parent = contentHost
+
+	local function registerTab(def)
+		local i = #tabButtons + 1
+		local tabDef = {
+			name = def.name or ("Tab " .. i),
+			title = def.title or def.name or ("Tab " .. i),
+			subtitle = def.subtitle or "",
+		}
+		tabMeta[i] = tabDef
+
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -16, 0, 34)
+		btn.BackgroundColor3 = i == 1 and COLORS.accent or COLORS.tabIdle
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 11
+		btn.TextColor3 = i == 1 and COLORS.bg or COLORS.muted
+		btn.Text = tabDef.name
+		btn.AutoButtonColor = false
+		btn.LayoutOrder = i
+		btn.Parent = sideTop
+		addCorner(btn, 8)
+		tabButtons[i] = btn
+
+		local page = Instance.new("Frame")
+		page.Size = UDim2.new(1, 0, 1, 0)
+		page.BackgroundTransparency = 1
+		page.Visible = (i == 1)
+		page.Parent = pagesHost
+		contentPages[i] = page
+
+		btn.MouseButton1Click:Connect(function()
+			switchTab(i)
+		end)
+
+		return { Page = page, Index = i }
+	end
+
+	for _, def in ipairs(tabs) do
+		registerTab(def)
+	end
+
+	local ui = {
+		COLORS = COLORS,
+		screenGui = screenGui,
+		uiRoot = uiRoot,
+		uiBody = uiBody,
+		contentPages = contentPages,
+		tabButtons = tabButtons,
+		pageTitle = pageTitle,
+		pageSubtitle = pageSubtitle,
+		userKey = userKey,
+		userKeyCaption = userKeyCaption,
+		refreshKeyStatus = refreshKeyStatus,
+		addCorner = addCorner,
+		switchTab = switchTab,
+		makeSectionTitle = makeSectionTitle,
+		makeToggle = makeToggle,
+		makeSlider = makeSlider,
+		makeScrollPage = makeScrollPage,
+		makeListWrap = makeListWrap,
+		makeFlowPanel = makeFlowPanel,
+		makeStatRow = makeStatRow,
+		makeFlowToggle = makeFlowToggle,
+		makeFlowSlider = makeFlowSlider,
+		makeCollapsibleSection = makeCollapsibleSection,
+		isMobile = function() return mobileMode end,
+		makeDraggable = makeDraggable,
+	}
+
+	function ui.NewFlowPanel(_, parent, title, width, height, posX, posY, bodyOffsetY)
+		return makeFlowPanel(parent, title, width, height, posX, posY, bodyOffsetY)
+	end
+
+	function ui.NewFlowToggle(_, parent, label, initial, onChange, layoutOrder, debounce)
+		return makeFlowToggle(parent, label, initial, onChange, layoutOrder, debounce)
+	end
+
+	function ui.NewToggle(_, parent, y, label, initial, onChange, debounce)
+		return makeToggle(parent, y, label, initial, onChange, debounce)
+	end
+
+	function ui.NewSlider(_, parent, y, label, min, max, initial, onChange)
+		return makeSlider(parent, y, label, min, max, initial, onChange)
+	end
+
+	function ui.NewScrollPage(_, parent)
+		return makeScrollPage(parent)
+	end
+
+	function ui.NewListWrap(_, scroll)
+		return makeListWrap(scroll)
+	end
+
+	function ui.NewSectionTitle(_, parent, text, order)
+		return makeSectionTitle(parent, text, order)
+	end
+
+	function ui.NewStatRow(_, parent, label, layoutOrder)
+		return makeStatRow(parent, label, layoutOrder)
+	end
+
+	function ui.NewTab(name, subtitleOrDef)
+		local def
+		if typeof(name) == "table" then
+			def = name
+		elseif typeof(subtitleOrDef) == "table" then
+			def = subtitleOrDef
+			def.name = def.name or name
+		else
+			def = {
+				name = name,
+				title = name,
+				subtitle = subtitleOrDef or "",
+			}
+		end
+		return registerTab(def)
+	end
+
+	function ui.ToggleUI()
+		if uiRoot then
+			uiRoot.Visible = not uiRoot.Visible
+		end
+	end
+
+	function ui.Destroy()
+		if screenGui and screenGui.Parent then
+			screenGui:Destroy()
+		end
+		genv._MaxiHubGuiRegistry[guiName] = nil
+		local conn = genv._MaxiHubInputConn[guiName]
+		if conn then
+			pcall(function() conn:Disconnect() end)
+			genv._MaxiHubInputConn[guiName] = nil
+		end
+	end
+
+	local function showHideHintOnce()
+		local hideHintKey = "MaxiHubHideHint_" .. guiName
+		if genv[hideHintKey] then return end
+		genv[hideHintKey] = true
+
+		local toast = Instance.new("TextLabel")
+		toast.Name = "HideHint"
+		toast.AnchorPoint = Vector2.new(0.5, 0)
+		toast.Size = UDim2.new(0, 240, 0, 22)
+		toast.Position = UDim2.new(0.5, 0, 0, 50)
+		toast.BackgroundTransparency = 1
+		toast.BorderSizePixel = 0
+		toast.Font = Enum.Font.Gotham
+		toast.TextSize = 11
+		toast.TextColor3 = COLORS.muted
+		toast.Text = hideHintMessage
+		toast.TextTransparency = 1
+		toast.ZIndex = 20
+		toast.Parent = screenGui
+
+		TweenService:Create(toast, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextTransparency = 0.35,
+		}):Play()
+
+		task.delay(3, function()
+			if not toast.Parent then return end
+			local fade = TweenService:Create(toast, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				TextTransparency = 1,
+			})
+			fade:Play()
+			fade.Completed:Connect(function()
+				toast:Destroy()
+			end)
+		end)
+	end
+
+	function ui.finalize()
+		makeDraggable(uiRoot, titleBar)
+
+		local titleBarExpandedSize = UDim2.new(1, 0, 0, 42)
+		local titleBarExpandedPos = UDim2.new(0, 0, 0, 0)
+		local uiBodyExpandedSize = UDim2.new(1, -16, 1, -50)
+		local uiBodyExpandedPos = UDim2.new(0, 8, 0, 46)
+
+		local minimized = false
+		local savedSize = uiRoot.Size
+		hideBtn.MouseButton1Click:Connect(function()
+			minimized = not minimized
+			if minimized then
+				savedSize = uiRoot.Size
+				uiRoot.Size = UDim2.new(0, WINDOW_W, 0, 40)
+				uiBody.Visible = false
+				titleFix.Visible = false
+				titleBar.Size = UDim2.new(1, 0, 1, 0)
+				titleBar.Position = UDim2.new(0, 0, 0, 0)
+				title.Size = UDim2.new(1, -140, 1, 0)
+				title.Position = UDim2.new(0, 14, 0, 0)
+				title.TextYAlignment = Enum.TextYAlignment.Center
+				titleHint.Visible = false
+				hideBtn.Text = "+"
+				showHideHintOnce()
+			else
+				uiRoot.Size = savedSize
+				uiBody.Visible = true
+				titleFix.Visible = true
+				titleBar.Size = titleBarExpandedSize
+				titleBar.Position = titleBarExpandedPos
+				title.Size = UDim2.new(1, -140, 0, 22)
+				title.Position = UDim2.new(0, 14, 0, 6)
+				title.TextYAlignment = Enum.TextYAlignment.Center
+				titleHint.Visible = true
+				uiBody.Size = uiBodyExpandedSize
+				uiBody.Position = uiBodyExpandedPos
+				hideBtn.Text = "—"
+			end
+		end)
+
+		genv._MaxiHubInputConn[guiName] = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed then return end
+
+			if not mobileMode and input.KeyCode == Enum.KeyCode.RightControl then
+				local willHide = uiRoot.Visible
+				uiRoot.Visible = not uiRoot.Visible
+				if willHide then
+					showHideHintOnce()
+				end
+				return
+			end
+
+			if typeof(extraInputHandler) == "function" then
+				extraInputHandler(input, gameProcessed)
+			end
+		end)
+
+		switchTab(1)
+
+		if mobileMode then
+			local dock = Instance.new("Frame")
+			dock.Size = UDim2.new(0, 132, 0, 44)
+			dock.Position = UDim2.new(0.5, -66, 1, -58)
+			dock.BackgroundTransparency = 1
+			dock.Parent = screenGui
+
+			local function mobileBtn(text, x, cb)
+				local b = Instance.new("TextButton")
+				b.Size = UDim2.new(0, 60, 0, 40)
+				b.Position = UDim2.new(0, x, 0, 0)
+				b.BackgroundColor3 = COLORS.panel
+				b.BorderSizePixel = 0
+				b.Font = Enum.Font.GothamBold
+				b.TextSize = 11
+				b.TextColor3 = COLORS.text
+				b.Text = text
+				b.AutoButtonColor = false
+				b.Parent = dock
+				addCorner(b, 10)
+				b.MouseButton1Click:Connect(function()
+					if cb then cb() end
+				end)
+				return b
+			end
+
+			mobileBtn(config.mobileStopText or "Стоп", 0, onMobileFarmStop)
+			mobileBtn(config.mobileMenuText or "Меню", 72, function()
+				if typeof(onMobileMenuToggle) == "function" then
+					onMobileMenuToggle()
+				else
+					uiRoot.Visible = not uiRoot.Visible
+				end
+			end)
+		end
+	end
+
+	function ui.onInputBegan(handler)
+		extraInputHandler = handler
+	end
+
+	ui.OnInputBegan = ui.onInputBegan
+	ui.Finalize = ui.finalize
+
+	function ui.setLanguage(lang)
+		currentLanguage = (type(lang) == "string" and lang:lower() == "en") and "en" or "ru"
+		paintLanguageButtons()
+	end
+
+	function ui.setTitleHint(text)
+		if titleHint then
+			titleHint.Text = text or ""
+		end
+	end
+
+	function ui.setVersion(text)
+		if userVersion then
+			userVersion.Text = text or ""
+			userVersion.Visible = text ~= nil and text ~= ""
+		end
+	end
+
+	function ui.setHideHintText(text)
+		hideHintMessage = text or hideHintMessage
+	end
+
+	function ui.refreshTabLabels(defs)
+		if type(defs) ~= "table" then return end
+		for i, def in ipairs(defs) do
+			if tabMeta[i] and tabButtons[i] then
+				tabMeta[i].name = def.name or tabMeta[i].name
+				tabMeta[i].title = def.title or def.name or tabMeta[i].title
+				tabMeta[i].subtitle = def.subtitle or ""
+				tabButtons[i].Text = tabMeta[i].name
+			end
+		end
+		switchTab(activeTabId)
+	end
+
+	return ui
+end
+
+function MaxiHubUI.CreateLib(title, options)
+	options = options or {}
+	if typeof(title) == "string" then
+		options.title = options.title or title
+	end
+	return MaxiHubUI.create(options)
+end
+
+MaxiHubUI.CreateWindow = MaxiHubUI.CreateLib
+
+return MaxiHubUI
+
+
+end)()
+
+-- ===== embedded: epbr-logic.lua =====
+local EpbrLogicModule = (function()
+-- El Paso BR | logic module (bundle -> el-paso-br.lua)
+
+local M = {}
+
+local PLACE_ID = 14502598369
+local CONFIG_FILE = "el-paso-br-config.json"
+local BUILD = "v0.14.0"
+
+local CARGO_ITEMS = {
+	"Hot Dog",
+	"Taco",
+	"Bloxy Cola",
+	"Fake Designer Bag",
+	"Fake Watch",
+	"Sarsaparilla",
+}
+local MAX_SELECTED_CARGO_ITEMS = 3
+local CARGO_ITEM_SET = {}
+for _, itemName in ipairs(CARGO_ITEMS) do
+	CARGO_ITEM_SET[itemName] = true
+end
+
+local SMUGGLER_KEYWORDS = {
+	"smuggl", "contraband", "illegal", "cartel", "runner", "dealer", "traffick", "contrabando",
+}
+local SMUGGLE_BUY_COUNT_PER_ITEM = 3
+local PROMPT_HOLD_ZERO_RESWEEP_SECONDS = 40
+local BOOST_RETUNE_INTERVAL = 0.35
+local NOCLIP_UPDATE_INTERVAL_IDLE = 0.16
+local NOCLIP_UPDATE_INTERVAL_ROUTE = 0.07
+local SELL_CONFIRM_TIMEOUT_FAST = 1.25
+local SELL_RETRY_DELAY_FAST = 0.05
+
+local mounted = false
+local conns = {}
+local threads = {}
+local noclipSaved = {}
+local teleportBusy = false
+local trackedVehicle = nil
+local routeNoclipActive = false
+local gatePartState = {}
+local driveTuneSaved = {}
+local smugglePromptSaved = {}
+local emergencyStopRequested = false
+local firstPersonAutoActive = false
+local savedCameraState = nil
+local lastNoclipUpdateAt = 0
+local lastBoostRetuneAt = 0
+local smartTeleportTo
+local getPartPosition
+local getPromptWorldPos
+local getVehicleDriveTune
+local lookCameraDown
+
+local DRIVE_BOOST_MUL_KEYS = {
+	Horsepower = true,
+	RevAccel = true,
+	PeakRPM = true,
+	Redline = true,
+	FinalDrive = true,
+	FDMult = true,
+}
+
+local Config = {
+	stepSize = 0.20,
+	stepsPerFrame = 10,
+	climbHeight = 45,
+	descendStepMult = 0.32,
+	finalHoldSeconds = 0.50,
+	smuggleHoldSeconds = 2,
+	vehicleHoverWait = 2,
+	vehicleTpMode = "air_step", -- air_step | fast | legit
+	vehicleStepSize = 0.4,
+	footMoveTimeout = 8,
+	footTpMode = "elevated", -- step | elevated
+	cargoItems = { "Fake Watch" },
+	cargoItem = "Fake Watch", -- legacy fallback (single item)
+	uiLanguage = "ru",
+	teleportMode = "foot",
+	vehicleOnlyTeleport = false,
+	noclipFoot = false,
+	noclipVehicles = false,
+	noclipDuringRoute = true,
+	gatesRemoved = false,
+	espEnabled = false,
+	espMaxDistance = 1200,
+	vehicleBoostMaxSpeed = 60,
+	vehicleBoostEnabled = false,
+	vehicleStopOnS = false,
+	vehicleFlingEnabled = false,
+	vehicleFlingHoldSeconds = 2.4,
+	vehicleFlingRegrabDelay = 0.2,
+	vehicleFlingOrbitSpeed = 20,
+	vehicleFlingForeAft = 12,
+	vehicleFlingSide = 3.6,
+	vehicleFlingHeightOffset = -0.8,
+	vehicleFlingBobAmplitude = 3.2,
+	vehicleFlingLinearPower = 900,
+	vehicleFlingSpinPower = 1800,
+	vehicleFlingUltraMult = 2.0,
+	forcePromptHoldZero = true,
+	autoSmuggle = false,
+	autoWork = false,
+	waypoints = {
+		pickup = nil,
+		dropoff = nil,
+		footZone = nil,
+		carSeat = nil,
+		carPickup = nil,
+		carDropoff = nil,
+	},
+}
+
+local State = { status = "готов", phase = "idle" }
+
+local ctxRef = {}
+local statusValueLabel
+local phaseValueLabel
+local pickupValueLabel
+local dropoffValueLabel
+local footZoneValueLabel
+local carPickupValueLabel
+local carDropoffValueLabel
+local cargoValueLabel
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local moduleCache = {}
+local translateFn = function(_key, fallback) return fallback or _key end
+local localeRefreshers = {}
+
+local function tr(key, fallback)
+	local ok, value = pcall(translateFn, key, fallback)
+	if ok and type(value) == "string" and value ~= "" then
+		return value
+	end
+	return fallback or key
+end
+
+local function getModulePaths(fileName)
+	local paths = {}
+	local genv = typeof(getgenv) == "function" and getgenv() or _G
+	local customRoot = genv and genv.EPBRLocalRoot
+	if type(customRoot) == "string" and customRoot ~= "" then
+		table.insert(paths, customRoot .. "/" .. fileName)
+	end
+	table.insert(paths, "el-paso-br/" .. fileName)
+	table.insert(paths, fileName)
+	return paths
+end
+
+local function loadOptionalModule(fileName)
+	if moduleCache[fileName] ~= nil then
+		return moduleCache[fileName] or nil
+	end
+	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+		moduleCache[fileName] = false
+		return nil
+	end
+	local loader = loadstring or load
+	if type(loader) ~= "function" then
+		moduleCache[fileName] = false
+		return nil
+	end
+
+	for _, path in ipairs(getModulePaths(fileName)) do
+		local okFile, exists = pcall(isfile, path)
+		if okFile and exists then
+			local okRead, src = pcall(readfile, path)
+			if okRead and type(src) == "string" and src ~= "" then
+				local chunk, cerr = loader(src, "@" .. path)
+				if chunk then
+					local okRun, mod = pcall(chunk)
+					if okRun and type(mod) == "function" then
+						moduleCache[fileName] = mod
+						return mod
+					end
+				else
+					moduleCache[fileName] = false
+					return nil
+				end
+			end
+		end
+	end
+
+	moduleCache[fileName] = false
+	return nil
+end
+
+local function trackConn(c)
+	if c then table.insert(conns, c) end
+	return c
+end
+
+local function stopThread(name) threads[name] = false end
+
+local function startThread(name, fn)
+	threads[name] = true
+	task.spawn(fn)
+end
+
+local function notify(_msg) end
+
+local function isActionCancelled()
+	return emergencyStopRequested or not mounted
+end
+
+local function waitInterruptible(seconds)
+	local untilTime = os.clock() + math.max(0, seconds or 0)
+	while os.clock() < untilTime do
+		if isActionCancelled() then
+			return false
+		end
+		task.wait(0.03)
+	end
+	return true
+end
+
+local function clearEmergencyStop()
+	emergencyStopRequested = false
+end
+
+local function getLocalPlayer() return ctxRef.player or Players.LocalPlayer end
+
+local function getCharacter()
+	local lp = getLocalPlayer()
+	return lp and lp.Character
+end
+
+local function getHumanoid(char)
+	char = char or getCharacter()
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function applyFirstPersonCamera()
+	local lp = getLocalPlayer()
+	if not lp then return end
+	local cam = Workspace.CurrentCamera
+	if not savedCameraState then
+		savedCameraState = {
+			cameraMode = lp.CameraMode,
+			minZoom = lp.CameraMinZoomDistance,
+			maxZoom = lp.CameraMaxZoomDistance,
+			cameraType = cam and cam.CameraType or nil,
+		}
+	end
+
+	pcall(function()
+		lp.CameraMode = Enum.CameraMode.LockFirstPerson
+		lp.CameraMinZoomDistance = 0.5
+		lp.CameraMaxZoomDistance = 0.5
+	end)
+
+	local hum = getHumanoid()
+	if cam then
+		pcall(function()
+			cam.CameraType = Enum.CameraType.Custom
+			if hum then cam.CameraSubject = hum end
+		end)
+	end
+end
+
+local function restoreCameraState()
+	local saved = savedCameraState
+	if not saved then return end
+	local lp = getLocalPlayer()
+	if lp then
+		pcall(function()
+			if saved.cameraMode ~= nil then lp.CameraMode = saved.cameraMode end
+			if saved.minZoom ~= nil then lp.CameraMinZoomDistance = saved.minZoom end
+			if saved.maxZoom ~= nil then lp.CameraMaxZoomDistance = saved.maxZoom end
+		end)
+	end
+	local cam = Workspace.CurrentCamera
+	if cam and saved.cameraType ~= nil then
+		pcall(function() cam.CameraType = saved.cameraType end)
+	end
+	savedCameraState = nil
+end
+
+local function setAutoSmuggleFirstPerson(on)
+	firstPersonAutoActive = on == true
+	if firstPersonAutoActive then
+		applyFirstPersonCamera()
+	else
+		restoreCameraState()
+	end
+end
+
+local function getRootPart(char)
+	char = char or getCharacter()
+	if not char then return nil end
+	return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+end
+
+local function setStatus(text)
+	State.status = text
+	if statusValueLabel and statusValueLabel.Parent then statusValueLabel.Text = text end
+end
+
+local function setPhase(text)
+	State.phase = text
+	if phaseValueLabel and phaseValueLabel.Parent then phaseValueLabel.Text = text end
+end
+
+local function vecToTable(v) return { x = v.X, y = v.Y, z = v.Z } end
+
+local function tableToVec3(t)
+	if not t or type(t) ~= "table" then return nil end
+	local x = t.x or t.X
+	local y = t.y or t.Y
+	local z = t.z or t.Z
+	if x == nil or y == nil or z == nil then return nil end
+	return Vector3.new(x, y, z)
+end
+
+local function isValidCargoItemName(name)
+	return type(name) == "string" and CARGO_ITEM_SET[name] == true
+end
+
+local function sanitizeCargoSelection(rawSelection)
+	local out, seen = {}, {}
+	if type(rawSelection) == "table" then
+		for _, itemName in ipairs(rawSelection) do
+			if isValidCargoItemName(itemName) and not seen[itemName] then
+				table.insert(out, itemName)
+				seen[itemName] = true
+				if #out >= MAX_SELECTED_CARGO_ITEMS then
+					break
+				end
+			end
+		end
+	end
+	if #out == 0 then
+		local fallback = isValidCargoItemName(Config.cargoItem) and Config.cargoItem or CARGO_ITEMS[1]
+		table.insert(out, fallback)
+	end
+	return out
+end
+
+local function getSelectedCargoItems()
+	local items = sanitizeCargoSelection(Config.cargoItems)
+	Config.cargoItems = items
+	Config.cargoItem = items[1]
+	return items
+end
+
+local function saveConfig()
+	if typeof(writefile) ~= "function" then return end
+	local ok, json = pcall(function()
+		return game:GetService("HttpService"):JSONEncode(Config)
+	end)
+	if ok then writefile(CONFIG_FILE, json) end
+end
+
+local function loadConfig()
+	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then return end
+	if not isfile(CONFIG_FILE) then return end
+	local ok, data = pcall(function()
+		return game:GetService("HttpService"):JSONDecode(readfile(CONFIG_FILE))
+	end)
+	if not ok or type(data) ~= "table" then return end
+	for k, v in pairs(data) do Config[k] = v end
+	if type(Config.waypoints) ~= "table" then
+		Config.waypoints = { pickup = nil, dropoff = nil, footZone = nil, carSeat = nil, carPickup = nil, carDropoff = nil }
+	end
+	if Config.waypoints.carPickup == nil then Config.waypoints.carPickup = nil end
+	if Config.waypoints.carDropoff == nil then Config.waypoints.carDropoff = nil end
+	Config.cargoItems = sanitizeCargoSelection(Config.cargoItems)
+	Config.cargoItem = Config.cargoItems[1]
+	Config.uiLanguage = (type(Config.uiLanguage) == "string" and Config.uiLanguage:lower() == "en") and "en" or "ru"
+	if Config.footTpMode ~= "step" and Config.footTpMode ~= "elevated" then
+		Config.footTpMode = "elevated"
+	end
+	if type(Config.smuggleHoldSeconds) ~= "number" then Config.smuggleHoldSeconds = 2 end
+	if type(Config.descendStepMult) ~= "number" then Config.descendStepMult = 0.32 end
+	if type(Config.finalHoldSeconds) ~= "number" then Config.finalHoldSeconds = 0.50 end
+	if type(Config.vehicleBoostMaxSpeed) ~= "number" then
+		local legacyMult = tonumber(Config.vehicleSpeedMult)
+		if legacyMult and legacyMult > 0 then
+			Config.vehicleBoostMaxSpeed = math.max(20, math.floor((legacyMult * 25) + 0.5))
+		else
+			Config.vehicleBoostMaxSpeed = 60
+		end
+	end
+	Config.vehicleBoostMaxSpeed = math.clamp(Config.vehicleBoostMaxSpeed, 20, 500)
+	if type(Config.vehicleFlingEnabled) ~= "boolean" then Config.vehicleFlingEnabled = false end
+	if type(Config.vehicleFlingHoldSeconds) ~= "number" then Config.vehicleFlingHoldSeconds = 2.4 end
+	if type(Config.vehicleFlingRegrabDelay) ~= "number" then Config.vehicleFlingRegrabDelay = 0.2 end
+	if type(Config.vehicleFlingOrbitSpeed) ~= "number" then Config.vehicleFlingOrbitSpeed = 20 end
+	if type(Config.vehicleFlingForeAft) ~= "number" then Config.vehicleFlingForeAft = 12 end
+	if type(Config.vehicleFlingSide) ~= "number" then Config.vehicleFlingSide = 3.6 end
+	if type(Config.vehicleFlingHeightOffset) ~= "number" then Config.vehicleFlingHeightOffset = -0.8 end
+	if type(Config.vehicleFlingBobAmplitude) ~= "number" then Config.vehicleFlingBobAmplitude = 3.2 end
+	if type(Config.vehicleFlingLinearPower) ~= "number" then Config.vehicleFlingLinearPower = 900 end
+	if type(Config.vehicleFlingSpinPower) ~= "number" then Config.vehicleFlingSpinPower = 1800 end
+	if type(Config.vehicleFlingUltraMult) ~= "number" then Config.vehicleFlingUltraMult = 2.0 end
+	Config.vehicleFlingHoldSeconds = math.clamp(Config.vehicleFlingHoldSeconds, 0.3, 10)
+	Config.vehicleFlingRegrabDelay = math.clamp(Config.vehicleFlingRegrabDelay, 0, 0.5)
+	Config.vehicleFlingOrbitSpeed = math.clamp(Config.vehicleFlingOrbitSpeed, 2, 60)
+	Config.vehicleFlingForeAft = math.clamp(Config.vehicleFlingForeAft, 0.5, 12)
+	Config.vehicleFlingSide = math.clamp(Config.vehicleFlingSide, 0.5, 12)
+	Config.vehicleFlingHeightOffset = math.clamp(Config.vehicleFlingHeightOffset, -4, 3)
+	Config.vehicleFlingBobAmplitude = math.clamp(Config.vehicleFlingBobAmplitude, 0, 4)
+	Config.vehicleFlingLinearPower = math.clamp(Config.vehicleFlingLinearPower, 40, 900)
+	Config.vehicleFlingSpinPower = math.clamp(Config.vehicleFlingSpinPower, 60, 1800)
+	Config.vehicleFlingUltraMult = math.clamp(Config.vehicleFlingUltraMult, 0.5, 3.5)
+	Config.vehicleSpeedMult = nil
+	if type(Config.forcePromptHoldZero) ~= "boolean" then Config.forcePromptHoldZero = true end
+	if Config.vehicleTpMode == "fast" then
+		Config.vehicleTpMode = "air_step"
+	end
+	if Config.vehicleTpMode ~= "air_step" and Config.vehicleTpMode ~= "legit" and Config.vehicleTpMode ~= "fast" then
+		Config.vehicleTpMode = "air_step"
+	end
+	if type(Config.climbHeight) ~= "number" then Config.climbHeight = 45 end
+	if type(Config.stepSize) ~= "number" then Config.stepSize = 0.20 end
+	if type(Config.stepsPerFrame) ~= "number" then Config.stepsPerFrame = 10 end
+	Config.stepsPerFrame = math.clamp(math.floor(Config.stepsPerFrame + 0.5), 1, 12)
+end
+
+local function refreshWaypointLabels()
+	local notSetText = tr("value_not_set", "не задан")
+	if pickupValueLabel and pickupValueLabel.Parent then
+		local wp = Config.waypoints.pickup
+		pickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	end
+	if dropoffValueLabel and dropoffValueLabel.Parent then
+		local wp = Config.waypoints.dropoff
+		dropoffValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	end
+	if footZoneValueLabel and footZoneValueLabel.Parent then
+		local wp = Config.waypoints.footZone
+		footZoneValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	end
+	if carPickupValueLabel and carPickupValueLabel.Parent then
+		local wp = Config.waypoints.carPickup
+		carPickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	end
+	if carDropoffValueLabel and carDropoffValueLabel.Parent then
+		local wp = Config.waypoints.carDropoff
+		carDropoffValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	end
+	if cargoValueLabel and cargoValueLabel.Parent then
+		local cargoText = table.concat(getSelectedCargoItems(), ", ")
+		if #cargoText > 34 then
+			cargoText = cargoText:sub(1, 31) .. "..."
+		end
+		cargoValueLabel.Text = cargoText
+	end
+end
+
+local function getVehicle()
+	local hum = getHumanoid()
+	if not hum or not hum.SeatPart or not hum.SeatPart:IsA("VehicleSeat") then
+		return nil, nil
+	end
+	local seat = hum.SeatPart
+	return seat:FindFirstAncestorOfClass("Model"), seat
+end
+
+local function trackVehicleFromSeat(seat)
+	if seat and seat:IsA("VehicleSeat") then
+		local model = seat:FindFirstAncestorOfClass("Model")
+		if model then trackedVehicle = model end
+	end
+end
+
+local function findMyVehicle()
+	if trackedVehicle and trackedVehicle.Parent then
+		local seat = trackedVehicle:FindFirstChild("DriveSeat", true)
+		if seat and seat:IsA("VehicleSeat") then return trackedVehicle, seat end
+	end
+
+	local pickup = tableToVec3(Config.waypoints.carPickup) or tableToVec3(Config.waypoints.pickup)
+	local root = getRootPart()
+	local refPos = pickup or (root and root.Position)
+	if not refPos then return nil, nil end
+
+	local bestModel, bestSeat, bestDist
+	local stack = { Workspace }
+	local processed = 0
+	while #stack > 0 and not isActionCancelled() do
+		local inst = stack[#stack]
+		stack[#stack] = nil
+		if inst:IsA("VehicleSeat") and inst.Name == "DriveSeat" then
+			local model = inst:FindFirstAncestorOfClass("Model")
+			if model then
+				local dist = (inst.Position - refPos).Magnitude
+				if dist <= 200 and (not bestDist or dist < bestDist) then
+					bestModel = model
+					bestSeat = inst
+					bestDist = dist
+				end
+			end
+		end
+		local children = inst:GetChildren()
+		for i = 1, #children do
+			stack[#stack + 1] = children[i]
+		end
+		processed += 1
+		if processed % 220 == 0 then
+			task.wait()
+		end
+	end
+	if bestModel then trackedVehicle = bestModel end
+	return bestModel, bestSeat
+end
+
+local function getTeleportSubject(forceMode)
+	local mode = forceMode or Config.teleportMode or "vehicle"
+	if Config.vehicleOnlyTeleport and not forceMode then
+		mode = "vehicle"
+	end
+
+	if mode == "vehicle" then
+		local vehicle, seat = getVehicle()
+		if vehicle then return vehicle, seat, "vehicle" end
+		setStatus("садись в машину")
+		notify("ТП машиной — сядь в DriveSeat")
+		return nil, nil, nil
+	end
+
+	local char = getCharacter()
+	local root = getRootPart(char)
+	if not root then
+		setStatus("нет персонажа")
+		return nil, nil, nil
+	end
+	return root, root, "foot"
+end
+
+local function zeroVelocities(inst)
+	if inst:IsA("BasePart") then
+		inst.AssemblyLinearVelocity = Vector3.zero
+		inst.AssemblyAngularVelocity = Vector3.zero
+		return
+	end
+	for _, part in ipairs(inst:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.AssemblyLinearVelocity = Vector3.zero
+			part.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+end
+
+local function getSubjectPivot(subject, kind, anchor)
+	if kind == "vehicle" then return subject:GetPivot() end
+	return anchor.CFrame
+end
+
+local function setSubjectPivot(subject, kind, cf)
+	zeroVelocities(subject)
+	if kind == "vehicle" then subject:PivotTo(cf) else subject.CFrame = cf end
+end
+
+local function restoreNoclip(root)
+	if not root then return end
+	local saved = noclipSaved[root]
+	if saved then
+		for part, props in pairs(saved) do
+			if part.Parent then part.CanCollide = props.CanCollide end
+		end
+		noclipSaved[root] = nil
+	end
+end
+
+local function hardRestoreCollision(root)
+	if not root then return end
+	noclipSaved[root] = nil
+	for _, part in ipairs(root:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = true
+		end
+	end
+end
+
+local function restoreCharacterCollision(char)
+	if not char then return end
+	restoreNoclip(char)
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+		end
+	end
+end
+
+local function setVehicleAnchored(vehicle, anchored)
+	if not vehicle then return end
+	for _, part in ipairs(vehicle:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = anchored
+		end
+	end
+end
+
+local function liftVehicleIfUnderground(vehicle)
+	if not vehicle then return end
+	local pivot = vehicle:GetPivot()
+	local char = getCharacter()
+	local filter = { vehicle }
+	if char then table.insert(filter, char) end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = filter
+	local hit = Workspace:Raycast(pivot.Position + Vector3.new(0, 8, 0), Vector3.new(0, -500, 0), params)
+	if not hit then return end
+	local minY = hit.Position.Y + 3.5
+	if pivot.Position.Y < minY - 0.5 then
+		local _, yaw, _ = pivot:ToEulerAnglesYXZ()
+		setVehicleAnchored(vehicle, true)
+		vehicle:PivotTo(CFrame.new(pivot.Position.X, minY, pivot.Position.Z) * CFrame.Angles(0, yaw, 0))
+		zeroVelocities(vehicle)
+		setVehicleAnchored(vehicle, false)
+		zeroVelocities(vehicle)
+	end
+end
+
+local function stabilizeVehicle(vehicle, frames)
+	for _ = 1, (frames or 5) do
+		if isActionCancelled() or not vehicle or not vehicle.Parent then break end
+		zeroVelocities(vehicle)
+		RunService.Heartbeat:Wait()
+	end
+end
+
+local function resetVehicleDriveState(vehicle)
+	local tune = nil
+	if type(getVehicleDriveTune) == "function" then
+		tune = getVehicleDriveTune(vehicle)
+	end
+	if tune then
+		pcall(function()
+			if tune.RPM ~= nil then tune.RPM = tune.IdleRPM or 800 end
+			if tune.Throttle ~= nil then tune.Throttle = 0 end
+			if tune.Gear ~= nil then tune.Gear = 0 end
+			if tune.Velocity ~= nil then tune.Velocity = 0 end
+		end)
+	end
+	local seat = vehicle and vehicle:FindFirstChild("DriveSeat", true)
+	if seat and seat:IsA("VehicleSeat") then
+		pcall(function()
+			seat.ThrottleFloat = 0
+			seat.SteerFloat = 0
+		end)
+	end
+end
+
+local function raycastGroundY(x, z, hintY, excludeList)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = excludeList or {}
+	local originY = (hintY or 0) + 120
+	local hit = Workspace:Raycast(Vector3.new(x, originY, z), Vector3.new(0, -400, 0), params)
+	if hit then return hit.Position.Y + 3.5 end
+	return hintY or 0
+end
+
+local function resolveVehicleDestPos(targetPos, vehicle, useSavedY)
+	local char = getCharacter()
+	local exclude = { vehicle }
+	if char then table.insert(exclude, char) end
+	local groundY = raycastGroundY(targetPos.X, targetPos.Z, targetPos.Y, exclude)
+	local y = groundY
+	if useSavedY then
+		y = targetPos.Y
+	elseif math.abs(targetPos.Y - groundY) <= 10 then
+		y = targetPos.Y
+	end
+	return Vector3.new(targetPos.X, y, targetPos.Z)
+end
+
+local function buildVehicleDestCF(vehicle, destPos)
+	local _, yaw, _ = vehicle:GetPivot():ToEulerAnglesYXZ()
+	return CFrame.new(destPos) * CFrame.Angles(0, yaw, 0)
+end
+
+local function safeVehiclePivot(vehicle, destCF)
+	if not vehicle then return false end
+	resetVehicleDriveState(vehicle)
+	setVehicleAnchored(vehicle, true)
+	zeroVelocities(vehicle)
+	vehicle:PivotTo(destCF)
+	zeroVelocities(vehicle)
+	stabilizeVehicle(vehicle, 4)
+	setVehicleAnchored(vehicle, false)
+	stabilizeVehicle(vehicle, 12)
+	liftVehicleIfUnderground(vehicle)
+	resetVehicleDriveState(vehicle)
+	stabilizeVehicle(vehicle, 4)
+	return true
+end
+
+getVehicleDriveTune = function(vehicle)
+	if not vehicle then return nil end
+	local drive = vehicle:FindFirstChild("Drive", true)
+	if drive and drive:IsA("ModuleScript") then
+		local ok, tune = pcall(require, drive)
+		if ok and type(tune) == "table" then return tune, drive end
+	end
+	return nil
+end
+
+local function instantStopVehicle()
+	local vehicle = getVehicle() or trackedVehicle
+	if not vehicle then return end
+	resetVehicleDriveState(vehicle)
+	setVehicleAnchored(vehicle, true)
+	zeroVelocities(vehicle)
+	stabilizeVehicle(vehicle, 3)
+	setVehicleAnchored(vehicle, false)
+	stabilizeVehicle(vehicle, 6)
+	liftVehicleIfUnderground(vehicle)
+end
+
+local function getDriveSeatFromVehicle(vehicle)
+	if not vehicle then return nil end
+	local seat = vehicle:FindFirstChild("DriveSeat", true)
+	if seat and seat:IsA("VehicleSeat") then
+		return seat
+	end
+	return vehicle:FindFirstChildWhichIsA("VehicleSeat", true)
+end
+
+local function getSeatEnterPrompt(seat)
+	if not seat then return nil end
+	local attachment = seat:FindFirstChild("PromptAttachment") or seat:FindFirstChildWhichIsA("Attachment")
+	local prompt = attachment and attachment:FindFirstChildWhichIsA("ProximityPrompt")
+	if prompt then return prompt end
+	return seat:FindFirstChildWhichIsA("ProximityPrompt", true)
+end
+
+local function setVehicleFrozenState(vehicle, frozen)
+	if not vehicle then return false end
+	resetVehicleDriveState(vehicle)
+	setVehicleAnchored(vehicle, frozen == true)
+	zeroVelocities(vehicle)
+	return true
+end
+
+local function vehicleInstantTeleportToPos(vehicle, targetPos, keepFrozen)
+	if not vehicle or not targetPos then return false end
+	resetVehicleDriveState(vehicle)
+	setVehicleAnchored(vehicle, true)
+	vehicle:PivotTo(buildVehicleDestCF(vehicle, Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)))
+	zeroVelocities(vehicle)
+	if not keepFrozen then
+		setVehicleAnchored(vehicle, false)
+	end
+	return true
+end
+
+local function forceExitVehicleNow()
+	local hum = getHumanoid()
+	if not hum then return false end
+	if not hum.SeatPart then return true end
+	exitVehicle()
+	local deadline = os.clock() + 1.8
+	while hum.SeatPart and os.clock() < deadline and not isActionCancelled() do
+		hum.Sit = false
+		pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+		task.wait(0.05)
+	end
+	return hum.SeatPart == nil
+end
+
+local function tryEnterVehicleSeat(vehicle, seat, timeout)
+	vehicle = vehicle or getVehicle() or trackedVehicle
+	seat = seat or getDriveSeatFromVehicle(vehicle)
+	local hum = getHumanoid()
+	local root = getFootRoot()
+	if not vehicle or not seat or not hum or not root then return false end
+
+	local deadline = os.clock() + math.max(0.5, timeout or 3)
+	while os.clock() < deadline and not isActionCancelled() do
+		if hum.SeatPart == seat then
+			trackVehicleFromSeat(seat)
+			return true
+		end
+
+		local seatCf = seat.CFrame
+		local approachPos = seatCf.Position + seatCf.LookVector * -2.2 + Vector3.new(0, 1.7, 0)
+		root.CFrame = CFrame.new(approachPos, seatCf.Position + Vector3.new(0, 1.2, 0))
+		zeroVelocities(root)
+
+		local prompt = getSeatEnterPrompt(seat)
+		if prompt then
+			if typeof(fireproximityprompt) == "function" then
+				pcall(function() fireproximityprompt(prompt, 0) end)
+			else
+				pcall(function()
+					prompt:InputHoldBegin()
+					task.wait(0.05)
+					prompt:InputHoldEnd()
+				end)
+			end
+		end
+
+		if typeof(firetouchinterest) == "function" then
+			pcall(function()
+				firetouchinterest(root, seat, 0)
+				firetouchinterest(root, seat, 1)
+			end)
+		end
+
+		pcall(function() hum.Jump = true end)
+		task.wait(0.06)
+	end
+
+	return hum.SeatPart == seat
+end
+
+local function isVehicleFlingTarget(model)
+	if not model or not model:IsA("Model") then return false end
+	local seat = getDriveSeatFromVehicle(model)
+	if not seat then return false end
+	local body = model:FindFirstChild("Body")
+	if body and (body:IsA("BasePart") or body:FindFirstChildWhichIsA("BasePart", true)) then
+		return true
+	end
+	return model:FindFirstChildWhichIsA("BasePart", true) ~= nil
+end
+
+local function getVehicleBodyPos(model)
+	if not model then return nil end
+	local body = model:FindFirstChild("Body")
+	return getPartPosition(body or model)
+end
+
+local function getVehicleFlingTargets(myVehicle)
+	local targets = {}
+	for _, inst in ipairs(Workspace:GetChildren()) do
+		if inst ~= myVehicle and isVehicleFlingTarget(inst) then
+			table.insert(targets, inst)
+		end
+	end
+	table.sort(targets, function(a, b)
+		local ap = getVehicleBodyPos(a)
+		local bp = getVehicleBodyPos(b)
+		local myPos = getVehicleBodyPos(myVehicle) or Vector3.zero
+		local ad = ap and (ap - myPos).Magnitude or math.huge
+		local bd = bp and (bp - myPos).Magnitude or math.huge
+		return ad < bd
+	end)
+	return targets
+end
+
+local function slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
+	if not myVehicle or not targetVehicle then return false end
+	local targetPos = getVehicleBodyPos(targetVehicle)
+	if not targetPos then return false end
+	local startTime = os.clock()
+	local _, baseYaw, _ = myVehicle:GetPivot():ToEulerAnglesYXZ()
+	local holdUntil = os.clock() + math.max(0.4, holdSeconds or 1.8)
+	local ultraMult = math.clamp(tonumber(Config.vehicleFlingUltraMult) or 1.0, 0.5, 3.5)
+	local orbitSpeed = math.clamp(tonumber(Config.vehicleFlingOrbitSpeed) or 8.4, 2, 60) * ultraMult
+	local foreAft = math.clamp(tonumber(Config.vehicleFlingForeAft) or 2.35, 0.5, 12)
+	local side = math.clamp(tonumber(Config.vehicleFlingSide) or 2.35, 0.5, 12)
+	local heightOffset = math.clamp(tonumber(Config.vehicleFlingHeightOffset) or -0.45, -4, 3)
+	local bobAmp = math.clamp(tonumber(Config.vehicleFlingBobAmplitude) or 0.42, 0, 4)
+	local linearPower = math.clamp(tonumber(Config.vehicleFlingLinearPower) or 165, 40, 900) * ultraMult
+	local spinPower = math.clamp(tonumber(Config.vehicleFlingSpinPower) or 250, 60, 1800) * ultraMult
+	local tiltPower = math.clamp(spinPower * 0.22, 14, 420)
+	local yawBobDeg = math.clamp(spinPower * 0.08, 6, 95)
+	local yKickBase = math.clamp(linearPower * 0.065, 3, 75)
+	local yKickBob = math.clamp(linearPower * 0.18, 8, 130)
+
+	resetVehicleDriveState(myVehicle)
+	setVehicleAnchored(myVehicle, false)
+	while mounted and not isActionCancelled() and threads.vehicleFling and Config.vehicleFlingEnabled and os.clock() < holdUntil do
+		local center = getVehicleBodyPos(targetVehicle) or targetPos
+		local t = os.clock() - startTime
+		local orbit = t * orbitSpeed
+		local sx = math.cos(orbit)
+		local sz = math.sin(orbit)
+		local bob = math.sin(t * (6.2 * math.min(2.2, 0.9 + (ultraMult * 0.4))))
+		local jitterPos = center + Vector3.new(sx * side, heightOffset + bob * bobAmp, sz * foreAft)
+		local yaw = baseYaw + orbit + math.rad(bob * yawBobDeg)
+		myVehicle:PivotTo(CFrame.new(jitterPos) * CFrame.Angles(0, yaw, 0))
+
+		local lin = Vector3.new(sx * linearPower, yKickBase + math.abs(bob) * yKickBob, sz * linearPower)
+		local ang = Vector3.new(tiltPower * bob, spinPower + bob * (spinPower * 0.55), -tiltPower * bob)
+		for _, part in ipairs(myVehicle:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.AssemblyLinearVelocity = lin
+				part.AssemblyAngularVelocity = ang
+			end
+		end
+		RunService.Heartbeat:Wait()
+	end
+	zeroVelocities(myVehicle)
+	return true
+end
+
+local function runVehicleFlingLoop()
+	stopThread("vehicleFling")
+	startThread("vehicleFling", function()
+		while mounted and threads.vehicleFling and Config.vehicleFlingEnabled and not emergencyStopRequested do
+			local myVehicle = getVehicle()
+			if not myVehicle then
+				setStatus("fling: сядь в машину")
+				break
+			end
+			trackedVehicle = myVehicle
+			local targets = getVehicleFlingTargets(myVehicle)
+			if #targets == 0 then
+				setStatus("fling: целей нет")
+				if not waitInterruptible(0.16) then break end
+			else
+				for _, target in ipairs(targets) do
+					if not mounted or not threads.vehicleFling or not Config.vehicleFlingEnabled or emergencyStopRequested then
+						break
+					end
+					setPhase("fling")
+					setStatus("fling -> " .. tostring(target.Name))
+					slamVehicleIntoTarget(myVehicle, target, Config.vehicleFlingHoldSeconds or 1.8)
+					if not waitInterruptible(Config.vehicleFlingRegrabDelay or 0.03) then
+						break
+					end
+				end
+			end
+		end
+		stopThread("vehicleFling")
+		if Config.vehicleFlingEnabled then
+			Config.vehicleFlingEnabled = false
+			saveConfig()
+		end
+		setPhase("idle")
+	end)
+end
+
+local function setVehicleFlingEnabled(v)
+	if not v then
+		Config.vehicleFlingEnabled = false
+		stopThread("vehicleFling")
+		setStatus("fling: стоп")
+		setPhase("idle")
+		saveConfig()
+		return false
+	end
+
+	local vehicle = getVehicle()
+	if not vehicle then
+		Config.vehicleFlingEnabled = false
+		stopThread("vehicleFling")
+		setStatus("fling: сядь в машину")
+		saveConfig()
+		return false
+	end
+
+	clearEmergencyStop()
+	trackedVehicle = vehicle
+	Config.vehicleFlingEnabled = true
+	runVehicleFlingLoop()
+	saveConfig()
+	return true
+end
+
+local function getVehicleBoostMaxSpeed()
+	local speed = tonumber(Config.vehicleBoostMaxSpeed) or 60
+	return math.clamp(speed, 20, 500)
+end
+
+local function getVehicleBoostPowerMult()
+	local maxSpeed = getVehicleBoostMaxSpeed()
+	return math.clamp(0.9 + (maxSpeed / 22), 1.1, 24)
+end
+
+local function applyVehicleDriveBoost(vehicle)
+	if not vehicle or not Config.vehicleBoostEnabled then return false end
+	local tune = getVehicleDriveTune(vehicle)
+	if not tune then return false end
+
+	if not driveTuneSaved[vehicle] then driveTuneSaved[vehicle] = {} end
+	local saved = driveTuneSaved[vehicle]
+	local mult = getVehicleBoostPowerMult()
+
+	for key in pairs(DRIVE_BOOST_MUL_KEYS) do
+		local val = tune[key]
+		if type(val) == "number" then
+			if saved[key] == nil then saved[key] = val end
+			local keyMult = mult
+			if key == "RevAccel" then
+				keyMult = mult * 1.15
+			elseif key == "FinalDrive" or key == "FDMult" then
+				keyMult = 1 + ((mult - 1) * 0.65)
+			elseif key == "PeakRPM" or key == "Redline" then
+				keyMult = 1 + ((mult - 1) * 0.35)
+			end
+			tune[key] = saved[key] * keyMult
+		end
+	end
+
+	for _, brakeKey in ipairs({ "Brakes", "BrakeForce", "BrakeTorque", "EBrakeForce" }) do
+		local val = tune[brakeKey]
+		if type(val) == "number" then
+			if saved[brakeKey] == nil then saved[brakeKey] = val end
+			tune[brakeKey] = saved[brakeKey] * (1 + ((mult - 1) * 0.7))
+		end
+	end
+
+	return true
+end
+
+local function getVehicleMotionPart(vehicle)
+	if not vehicle then return nil end
+	local body = vehicle:FindFirstChild("Body")
+	if body then
+		if body:IsA("BasePart") then
+			return body
+		end
+		local inner = body:FindFirstChildWhichIsA("BasePart", true)
+		if inner then return inner end
+	end
+	local seat = vehicle:FindFirstChild("DriveSeat", true)
+	if seat and seat:IsA("BasePart") then return seat end
+	return vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function applyVehicleBoostAssist(vehicle)
+	if not vehicle or not Config.vehicleBoostEnabled or teleportBusy then return end
+	local seat = vehicle:FindFirstChild("DriveSeat", true)
+	if not seat or not seat:IsA("VehicleSeat") then return end
+	local part = getVehicleMotionPart(vehicle)
+	if not part then return end
+
+	local throttle = tonumber(seat.ThrottleFloat) or 0
+	if throttle == 0 then
+		throttle = tonumber(seat.Throttle) or 0
+	end
+	local vel = part.AssemblyLinearVelocity
+	local flat = Vector3.new(vel.X, 0, vel.Z)
+	local speed = flat.Magnitude
+	local mult = getVehicleBoostPowerMult()
+	local maxSpeed = getVehicleBoostMaxSpeed()
+	local steer = tonumber(seat.SteerFloat) or 0
+	if steer == 0 then
+		steer = tonumber(seat.Steer) or 0
+	end
+
+	if speed > maxSpeed + 0.01 then
+		local ratio = maxSpeed / speed
+		flat = flat * ratio
+		speed = flat.Magnitude
+		part.AssemblyLinearVelocity = Vector3.new(flat.X, vel.Y, flat.Z)
+	end
+
+	if math.abs(throttle) < 0.05 then
+		if speed <= 0.25 then
+			part.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
+			part.AssemblyAngularVelocity = part.AssemblyAngularVelocity * 0.25
+			return
+		end
+		local damp = 1 - math.clamp(0.06 + (0.013 * mult), 0.22, 0.56)
+		if speed < 10 then
+			damp = damp * 0.75
+		end
+		local nextFlat = flat * damp
+		if nextFlat.Magnitude < 3.2 then
+			nextFlat = Vector3.zero
+		end
+		part.AssemblyLinearVelocity = Vector3.new(nextFlat.X, math.max(vel.Y, -14), nextFlat.Z)
+		part.AssemblyAngularVelocity = part.AssemblyAngularVelocity * 0.55
+		if nextFlat.Magnitude <= 0.25 then
+			part.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
+			resetVehicleDriveState(vehicle)
+		end
+		return
+	end
+
+	local look = seat.CFrame.LookVector
+	local dir = Vector3.new(look.X, 0, look.Z)
+	if dir.Magnitude <= 0.01 then return end
+	dir = dir.Unit * (throttle > 0 and 1 or -1)
+
+	local forwardSpeed = flat:Dot(dir)
+	local lateralVec = flat - (dir * forwardSpeed)
+	local lateralGrip = math.clamp(0.18 + (math.abs(steer) * 0.26), 0.14, 0.5)
+	local lateralKept = math.max(0, 1 - lateralGrip)
+	lateralVec = lateralVec * lateralKept
+
+	local targetSpeed = maxSpeed
+	local accelBlend = math.clamp(0.05 + (0.0045 * mult), 0.06, 0.22)
+	if math.abs(forwardSpeed) < (maxSpeed * 0.35) then
+		accelBlend = math.min(0.3, accelBlend + 0.08)
+	end
+
+	local desiredForwardSpeed = forwardSpeed + ((targetSpeed - forwardSpeed) * accelBlend)
+	local maxDelta = math.max(3, maxSpeed * 0.045)
+	local deltaSpeed = math.clamp(desiredForwardSpeed - forwardSpeed, -maxDelta, maxDelta)
+	local nextForwardSpeed = forwardSpeed + deltaSpeed
+
+	local nextFlat = (dir * nextForwardSpeed) + lateralVec
+	if nextFlat.Magnitude > maxSpeed then
+		nextFlat = nextFlat.Unit * maxSpeed
+	end
+
+	local downforce = math.clamp((nextFlat.Magnitude / math.max(1, maxSpeed)) * 7.5, 0, 7.5)
+	local forcedY = math.max(vel.Y - (downforce * 0.22), -28)
+	part.AssemblyLinearVelocity = Vector3.new(nextFlat.X, forcedY, nextFlat.Z)
+
+	if math.abs(steer) > 0.02 and nextFlat.Magnitude > 8 then
+		local turnAssist = math.clamp(0.003 + ((nextFlat.Magnitude / math.max(1, maxSpeed)) * 0.02), 0.003, 0.03)
+		local yawDelta = steer * turnAssist * (throttle >= 0 and 1 or -1)
+		local pivot = vehicle:GetPivot()
+		local _, yaw, _ = pivot:ToEulerAnglesYXZ()
+		vehicle:PivotTo(CFrame.new(pivot.Position) * CFrame.Angles(0, yaw + yawDelta, 0))
+		local ang = part.AssemblyAngularVelocity
+		part.AssemblyAngularVelocity = Vector3.new(ang.X * 0.96, ang.Y + (steer * math.clamp(nextFlat.Magnitude * 0.09, 4, 28)), ang.Z * 0.96)
+	end
+end
+
+local function resetVehicleDriveBoost(vehicle)
+	if not vehicle then return end
+	local tune = getVehicleDriveTune(vehicle)
+	local saved = driveTuneSaved[vehicle]
+	if tune and saved then
+		for key, val in pairs(saved) do
+			tune[key] = val
+		end
+	end
+	driveTuneSaved[vehicle] = nil
+end
+
+local function forceRestoreAllNoclip()
+	routeNoclipActive = false
+	local vehicle = getVehicle() or trackedVehicle
+	if vehicle then
+		hardRestoreCollision(vehicle)
+		setVehicleAnchored(vehicle, false)
+		liftVehicleIfUnderground(vehicle)
+	end
+	local char = getCharacter()
+	if char then restoreCharacterCollision(char) end
+	for root in pairs(noclipSaved) do
+		if root and root.Parent and root:FindFirstChildOfClass("Humanoid") then
+			restoreCharacterCollision(root)
+		else
+			hardRestoreCollision(root)
+		end
+	end
+end
+
+local function requestEmergencyStop(reason)
+	emergencyStopRequested = true
+	Config.autoSmuggle = false
+	Config.vehicleFlingEnabled = false
+	stopThread("autoSmuggle")
+	stopThread("vehicleFling")
+	stopThread("promptHoldZeroSweep")
+	stopThread("autoWork")
+	setAutoSmuggleFirstPerson(false)
+	teleportBusy = false
+	forceRestoreAllNoclip()
+	restoreSmugglePromptSettings()
+	setPhase("stop")
+	setStatus(reason or "экстренная остановка")
+	saveConfig()
+	notify("экстренная остановка")
+end
+
+local function isWheelMarkerName(name)
+	local lower = string.lower(tostring(name or ""))
+	if lower == "fl" or lower == "fr" or lower == "rl" or lower == "rr" then
+		return true
+	end
+	return lower:find("wheel", 1, true) ~= nil
+		or lower:find("tire", 1, true) ~= nil
+		or lower:find("tyre", 1, true) ~= nil
+end
+
+local function isVehicleWheelPart(vehicleModel, part)
+	if not vehicleModel or not part then return false end
+	local node = part
+	while node and node ~= vehicleModel do
+		if isWheelMarkerName(node.Name) then
+			return true
+		end
+		node = node.Parent
+	end
+	return false
+end
+
+local function applyNoclip(root, enabled, fullBody)
+	if not root then return end
+	if not enabled then restoreNoclip(root) return end
+	local keepVehicleWheelsClip = (not fullBody) and root:FindFirstChild("DriveSeat", true) ~= nil
+	if not noclipSaved[root] then noclipSaved[root] = {} end
+	for _, part in ipairs(root:GetDescendants()) do
+		if part:IsA("BasePart") then
+			if noclipSaved[root][part] == nil then
+				noclipSaved[root][part] = { CanCollide = part.CanCollide }
+			end
+			if fullBody then
+				part.CanCollide = false
+			else
+				if keepVehicleWheelsClip and isVehicleWheelPart(root, part) then
+					part.CanCollide = true
+				else
+					part.CanCollide = false
+				end
+			end
+		end
+	end
+end
+
+local function endRouteNoclipNow()
+	forceRestoreAllNoclip()
+	if Config.noclipVehicles then
+		local vehicle = getVehicle() or trackedVehicle
+		if vehicle then applyNoclip(vehicle, true, false) end
+	end
+	if Config.noclipFoot then
+		local char = getCharacter()
+		if char then applyNoclip(char, true, true) end
+	end
+end
+
+local function beginRouteNoclip()
+	if not Config.noclipDuringRoute then return end
+	routeNoclipActive = true
+	local vehicle = getVehicle() or trackedVehicle
+	if vehicle then
+		trackedVehicle = vehicle
+		applyNoclip(vehicle, true, false)
+	end
+	local char = getCharacter()
+	if char and not (getHumanoid() and getHumanoid().SeatPart) then
+		applyNoclip(char, true, true)
+	end
+end
+
+local function beginFootTeleportNoclip()
+	routeNoclipActive = true
+	local char = getCharacter()
+	if char then
+		applyNoclip(char, true, true)
+	end
+end
+
+local function setRouteNoclip(on)
+	if on then
+		beginRouteNoclip()
+	else
+		endRouteNoclipNow()
+	end
+end
+
+local function updateNoclip()
+	if routeNoclipActive and teleportBusy then
+		local char = getCharacter()
+		if char then applyNoclip(char, true, true) end
+		local vehicle = getVehicle() or trackedVehicle
+		if vehicle then applyNoclip(vehicle, true, false) end
+		return
+	elseif routeNoclipActive and not teleportBusy then
+		forceRestoreAllNoclip()
+	end
+
+	local vehicle = getVehicle() or trackedVehicle
+	if Config.noclipVehicles and vehicle then
+		applyNoclip(vehicle, true, false)
+	elseif vehicle then
+		restoreNoclip(vehicle)
+	end
+
+	local char = getCharacter()
+	if Config.noclipFoot and char then
+		applyNoclip(char, true, true)
+	elseif char then
+		restoreNoclip(char)
+	end
+end
+
+local function getFootRoot()
+	local char = getCharacter()
+	return char and getRootPart(char)
+end
+
+local function exitVehicle()
+	local hum = getHumanoid()
+	if not hum then return end
+	trackVehicleFromSeat(hum.SeatPart)
+	if not hum.SeatPart then return end
+	hum.Sit = false
+	task.wait(0.15)
+	pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+	task.wait(0.35)
+end
+
+local function waitNearPosition(target, radius, timeout)
+	radius = radius or 4
+	timeout = timeout or (Config.footMoveTimeout or 8)
+	local deadline = os.clock() + timeout
+	while not isActionCancelled() and os.clock() < deadline do
+		local root = getFootRoot()
+		if not root then return false end
+		if (root.Position - target).Magnitude <= radius then
+			return true
+		end
+		task.wait(0.05)
+	end
+	return false
+end
+
+-- Как в игре: Character:MoveTo / Humanoid:MoveTo (без якоря и PlatformStand)
+local function footMoveGame(pos)
+	local char = getCharacter()
+	local hum = getHumanoid(char)
+	local root = getRootPart(char)
+	if not char or not hum or not root then return false end
+
+	pcall(function()
+		hum.PlatformStand = false
+		hum.Sit = false
+		hum:ChangeState(Enum.HumanoidStateType.Running)
+	end)
+
+	local moved = pcall(function() char:MoveTo(pos) end)
+	if not moved then
+		pcall(function() hum:MoveTo(pos) end)
+	end
+
+	return waitNearPosition(pos, 5, 3)
+end
+
+-- Запасной быстрый ТП: только HRP, микрошаги, без Anchored
+local function footSnapTo(pos, snapOpts)
+	snapOpts = snapOpts or {}
+	local root = getFootRoot()
+	if not root then return false end
+
+	local hum = getHumanoid()
+	if hum then
+		pcall(function()
+			hum.PlatformStand = false
+			hum.Sit = false
+		end)
+	end
+
+	local startPos = root.Position
+	local delta = pos - startPos
+	local dist = delta.Magnitude
+	if dist < 0.5 then return true end
+
+	local step = math.max(0.03, snapOpts.stepSize or Config.stepSize)
+	local perFrame = math.max(1, math.floor(snapOpts.stepsPerFrame or Config.stepsPerFrame))
+	local dir = delta.Unit
+	local rotation = root.CFrame - root.CFrame.Position
+	local traveled = 0
+
+	while traveled < dist and not isActionCancelled() do
+		for _ = 1, perFrame do
+			if isActionCancelled() then return false end
+			traveled = math.min(traveled + step, dist)
+			root = getFootRoot()
+			if not root then return false end
+			root.CFrame = CFrame.new(startPos + dir * traveled) * rotation
+			zeroVelocities(root)
+			if traveled >= dist then break end
+		end
+		RunService.Heartbeat:Wait()
+	end
+	return true
+end
+
+local function holdFootAtPosition(pos, seconds)
+	local root = getFootRoot()
+	if not root then return false end
+	local duration = math.max(0, seconds or Config.finalHoldSeconds or 0)
+	if duration <= 0 then return true end
+	local rot = root.CFrame - root.CFrame.Position
+	local untilTime = os.clock() + duration
+	while not isActionCancelled() and os.clock() < untilTime do
+		root = getFootRoot()
+		if not root then return false end
+		root.CFrame = CFrame.new(pos) * rot
+		zeroVelocities(root)
+		RunService.Heartbeat:Wait()
+	end
+	return true
+end
+
+local function footTeleportElevated(targetPos)
+	local root = getFootRoot()
+	if not root then return false end
+
+	local startPos = root.Position
+	local dest = Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)
+	local cruiseY = math.max(startPos.Y, dest.Y) + (Config.climbHeight or 35)
+	local descendStep = math.max(0.03, (Config.stepSize or 0.25) * (Config.descendStepMult or 0.45))
+
+	if not footSnapTo(Vector3.new(startPos.X, cruiseY, startPos.Z)) then return false end
+	if not footSnapTo(Vector3.new(dest.X, cruiseY, dest.Z)) then return false end
+	if not footSnapTo(dest, { stepSize = descendStep, stepsPerFrame = 1 }) then return false end
+	return true
+end
+
+local function footTeleportByMode(targetPos, mode)
+	mode = mode or Config.footTpMode or "elevated"
+	local dest = Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)
+	setStatus("ноги [" .. mode .. "]...")
+
+	if mode == "step" then
+		return footSnapTo(dest)
+	end
+	if mode == "elevated" then
+		return footTeleportElevated(dest)
+	end
+	return footTeleportElevated(dest)
+end
+
+local function footTeleportTo(_subject, _anchor, targetPos, opts)
+	opts = opts or {}
+	exitVehicle()
+	if not waitInterruptible(0.2) then return false end
+
+	if not getFootRoot() then
+		setStatus("нет персонажа")
+		return false
+	end
+
+	local mode = opts.footMode or Config.footTpMode or "elevated"
+	local ok = footTeleportByMode(targetPos, mode)
+	if ok then
+		holdFootAtPosition(Vector3.new(targetPos.X, targetPos.Y, targetPos.Z), Config.finalHoldSeconds or 0.35)
+	end
+	if ok then
+		setStatus("ноги готово [" .. mode .. "]")
+		notify("ТП ноги: " .. mode .. " — ок")
+	else
+		setStatus("ноги fail [" .. mode .. "]")
+		notify("ТП ноги: " .. mode .. " — fail")
+	end
+	return ok
+end
+
+local function holdE(duration, prompt)
+	duration = duration or 1.5
+
+	if prompt and prompt.Parent and prompt:IsA("ProximityPrompt") then
+		pcall(function()
+			lookCameraDown()
+			prompt:InputHoldBegin()
+			local untilTime = os.clock() + math.max(0.03, duration)
+			while os.clock() < untilTime and not isActionCancelled() do
+				lookCameraDown()
+				task.wait(0.03)
+			end
+			prompt:InputHoldEnd()
+		end)
+	end
+
+	if VirtualInputManager then
+		local sentDown = false
+		pcall(function()
+			lookCameraDown()
+			VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+			sentDown = true
+			local untilTime = os.clock() + math.max(0.03, duration)
+			while os.clock() < untilTime and not isActionCancelled() do
+				lookCameraDown()
+				task.wait(0.03)
+			end
+		end)
+		if sentDown then
+			pcall(function()
+				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+			end)
+		end
+	elseif typeof(keypress) == "function" then
+		local pressed = false
+		pcall(function()
+			lookCameraDown()
+			keypress(0x45)
+			pressed = true
+			local untilTime = os.clock() + math.max(0.03, duration)
+			while os.clock() < untilTime and not isActionCancelled() do
+				lookCameraDown()
+				task.wait(0.03)
+			end
+		end)
+		if pressed and typeof(keyrelease) == "function" then
+			pcall(function() keyrelease(0x45) end)
+		end
+	end
+	return not isActionCancelled()
+end
+
+local function usePrompt(prompt, duration)
+	if not prompt or not prompt.Parent then return false end
+	duration = duration or 0.12
+	local ok = pcall(function()
+		lookCameraDown()
+		prompt:InputHoldBegin()
+		local untilTime = os.clock() + math.max(0.03, duration)
+		while os.clock() < untilTime and not isActionCancelled() do
+			lookCameraDown()
+			task.wait(0.03)
+		end
+		prompt:InputHoldEnd()
+	end)
+	if not ok and typeof(fireproximityprompt) == "function" then
+		pcall(function()
+			fireproximityprompt(prompt, duration)
+		end)
+	end
+	return not isActionCancelled()
+end
+
+local function tapPrompt(prompt)
+	return usePrompt(prompt, 0.12)
+end
+
+local function holdPrompt(prompt, duration)
+	return usePrompt(prompt, duration or 5)
+end
+
+local function forcePromptHoldZero(prompt)
+	if not prompt or not prompt.Parent or not prompt:IsA("ProximityPrompt") then return end
+	pcall(function()
+		if prompt.HoldDuration ~= 0 then
+			prompt.HoldDuration = 0
+		end
+	end)
+end
+
+local function applyPromptHoldZeroSweep()
+	if not Config.forcePromptHoldZero then return end
+	if threads.promptHoldZeroSweep then return end
+	startThread("promptHoldZeroSweep", function()
+		local stack = { Workspace }
+		local processed = 0
+		while mounted and threads.promptHoldZeroSweep and #stack > 0 do
+			local inst = stack[#stack]
+			stack[#stack] = nil
+			if inst:IsA("ProximityPrompt") then
+				forcePromptHoldZero(inst)
+			end
+			local children = inst:GetChildren()
+			for i = 1, #children do
+				stack[#stack + 1] = children[i]
+			end
+			processed += 1
+			if processed % 140 == 0 then
+				task.wait()
+			end
+		end
+		stopThread("promptHoldZeroSweep")
+	end)
+end
+
+local function runPromptHoldZeroLoop()
+	stopThread("promptHoldZero")
+	startThread("promptHoldZero", function()
+		while mounted and threads.promptHoldZero do
+			if Config.forcePromptHoldZero then
+				applyPromptHoldZeroSweep()
+			else
+				stopThread("promptHoldZeroSweep")
+			end
+			if not waitInterruptible(PROMPT_HOLD_ZERO_RESWEEP_SECONDS) then
+				break
+			end
+		end
+		stopThread("promptHoldZeroSweep")
+	end)
+end
+
+local function activatePromptSmart(prompt, fallbackHold)
+	if not prompt or not prompt.Parent then return false end
+	lookCameraDown()
+	local hold = tonumber(prompt.HoldDuration) or 0
+	if hold <= 0.05 then
+		return tapPrompt(prompt)
+	end
+	return holdPrompt(prompt, math.max(hold + 0.08, fallbackHold or hold))
+end
+
+local function restoreSmugglePromptSettings()
+	for prompt, saved in pairs(smugglePromptSaved) do
+		if prompt and prompt.Parent and saved then
+			pcall(function()
+				prompt.HoldDuration = saved.HoldDuration
+				prompt.MaxActivationDistance = saved.MaxActivationDistance
+			end)
+		end
+		smugglePromptSaved[prompt] = nil
+	end
+end
+
+local function normalizeText(text)
+	local s = string.lower(tostring(text or ""))
+	s = s:gsub("[%s%p_]+", "")
+	return s
+end
+
+local function promptMatchesQuery(prompt, query)
+	if not prompt or not query then return false end
+	local q = normalizeText(query)
+	if q == "" then return false end
+	local merged = normalizeText((prompt.ActionText or "") .. " " .. (prompt.ObjectText or "") .. " " .. (prompt.Name or ""))
+	return merged:find(q, 1, true) ~= nil
+end
+
+local function findNearestPromptByText(query, nearPos, maxDistance)
+	local bestPrompt, bestPos, bestDist
+	local fallbackPrompt, fallbackPos, fallbackDist
+	local root = getRootPart()
+	local refPos = nearPos or (root and root.Position)
+	local stack = { Workspace }
+	local processed = 0
+	while #stack > 0 and not isActionCancelled() do
+		local inst = stack[#stack]
+		stack[#stack] = nil
+		if inst:IsA("ProximityPrompt") and inst.Enabled and promptMatchesQuery(inst, query) then
+			local pos = getPromptWorldPos(inst)
+			if pos then
+				local ref = refPos or pos
+				local dist = (pos - ref).Magnitude
+				if not fallbackDist or dist < fallbackDist then
+					fallbackPrompt, fallbackPos, fallbackDist = inst, pos, dist
+				end
+				if (not maxDistance or dist <= maxDistance) and (not bestDist or dist < bestDist) then
+					bestPrompt, bestPos, bestDist = inst, pos, dist
+				end
+			end
+		end
+		local children = inst:GetChildren()
+		for i = 1, #children do
+			stack[#stack + 1] = children[i]
+		end
+		processed += 1
+		if processed % 220 == 0 then
+			task.wait()
+		end
+	end
+	return bestPrompt or fallbackPrompt, bestPos or fallbackPos, bestDist or fallbackDist
+end
+
+local function findNearestSellPrompt(nearPos, maxDistance)
+	local queries = { "sell all smuggle", "sell smuggle", "sell all" }
+	local bestPrompt, bestPos, bestDist
+	for _, q in ipairs(queries) do
+		local prompt, pos, dist = findNearestPromptByText(q, nearPos, maxDistance or 90)
+		if prompt and pos then
+			local d = dist
+			if d == nil then
+				local root = getRootPart()
+				local ref = nearPos or (root and root.Position) or pos
+				d = (pos - ref).Magnitude
+			end
+			if not bestDist or d < bestDist then
+				bestPrompt, bestPos, bestDist = prompt, pos, d
+			end
+		end
+	end
+	return bestPrompt, bestPos, bestDist
+end
+
+local function findNearestSmugglePurchasePrompt(itemName, nearPos)
+	local smuggling = Workspace:FindFirstChild("Smuggling")
+	local items = smuggling and smuggling:FindFirstChild("Items")
+	if not items then return nil, nil end
+
+	-- Все SmugglePurchasePrompt: HoldDuration = 0.
+	-- У выбранного предмета MaxActivationDistance = 100, у остальных = 0.
+	local bestPrompt, bestPos, bestDist
+	local root = getRootPart()
+	local refPos = nearPos or (root and root.Position)
+	for _, inst in ipairs(items:GetDescendants()) do
+		if inst:IsA("ProximityPrompt") and inst.Name == "SmugglePurchasePrompt" then
+			if smugglePromptSaved[inst] == nil then
+				smugglePromptSaved[inst] = {
+					HoldDuration = inst.HoldDuration,
+					MaxActivationDistance = inst.MaxActivationDistance,
+				}
+			end
+			local selected = inst:FindFirstAncestor(itemName) ~= nil
+			pcall(function()
+				inst.HoldDuration = 0
+				inst.MaxActivationDistance = selected and 100 or 0
+			end)
+			if not inst.Enabled then
+				continue
+			end
+			local itemRoot = inst:FindFirstAncestor(itemName)
+			if itemRoot then
+				local pos = getPromptWorldPos(inst)
+				if pos then
+					local ref = refPos or pos
+					local dist = (pos - ref).Magnitude
+					if not bestDist or dist < bestDist then
+						bestPrompt, bestPos, bestDist = inst, pos, dist
+					end
+				end
+			end
+		end
+	end
+	return bestPrompt, bestPos, bestDist
+end
+
+local function countNamedItemsInContainer(container, itemName)
+	if not container or not itemName or itemName == "" then return 0 end
+	local count = 0
+	for _, child in ipairs(container:GetChildren()) do
+		if child.Name == itemName then
+			count += 1
+		end
+	end
+	return count
+end
+
+local function forceToolsBackToBackpack()
+	local hum = getHumanoid()
+	if hum then
+		pcall(function() hum:UnequipTools() end)
+	end
+end
+
+local STACK_HINT_KEYS = {
+	"Amount", "Quantity", "Count", "Stack", "Stacks",
+}
+
+local function getBackpackContainer()
+	local lp = getLocalPlayer()
+	return lp and lp:FindFirstChild("Backpack")
+end
+
+local function readToolStackUnits(tool)
+	if not tool then return 0 end
+	local best = 0
+	for _, key in ipairs(STACK_HINT_KEYS) do
+		local attr = tool:GetAttribute(key)
+		if type(attr) == "number" and attr > best then
+			best = attr
+		end
+		local child = tool:FindFirstChild(key)
+		if child and (child:IsA("IntValue") or child:IsA("NumberValue")) then
+			local v = tonumber(child.Value) or 0
+			if v > best then best = v end
+		end
+	end
+	return math.max(0, best)
+end
+
+local function getBackpackItemSnapshot(itemName)
+	local backpack = getBackpackContainer()
+	if not backpack then
+		return { count = 0, stack = 0 }
+	end
+	forceToolsBackToBackpack()
+	local count = 0
+	local stack = 0
+	for _, child in ipairs(backpack:GetChildren()) do
+		if child.Name == itemName then
+			count += 1
+			stack += readToolStackUnits(child)
+		end
+	end
+	return { count = count, stack = stack }
+end
+
+local function getBackpackNamedCount(itemName)
+	local backpack = getBackpackContainer()
+	return countNamedItemsInContainer(backpack, itemName)
+end
+
+local function snapshotUnits(snapshot)
+	local count = snapshot and snapshot.count or 0
+	local stack = snapshot and snapshot.stack or 0
+	if count <= 0 then return 0 end
+	if stack <= 0 then return count end
+	-- Если stack выглядит как "реальное количество", используем его.
+	-- Если значение слишком большое (например цена), остаёмся на count.
+	if (stack / count) <= 20 then
+		return stack
+	end
+	return count
+end
+
+local function hasSnapshotProgress(before, after)
+	if not before or not after then return false end
+	if (after.count or 0) > (before.count or 0) then return true end
+	if (after.count or 0) == (before.count or 0) and snapshotUnits(after) > snapshotUnits(before) + 0.001 then
+		return true
+	end
+	return false
+end
+
+local function waitForBackpackProgress(itemName, beforeSnapshot, timeout)
+	local deadline = os.clock() + math.max(0.1, timeout or 1.0)
+	local current = getBackpackItemSnapshot(itemName)
+	while os.clock() < deadline and not isActionCancelled() do
+		current = getBackpackItemSnapshot(itemName)
+		if hasSnapshotProgress(beforeSnapshot, current) then
+			return true, current
+		end
+		task.wait(0.05)
+	end
+	return false, current
+end
+
+local function activateBuyPromptRobust(prompt)
+	if not prompt or not prompt.Parent then return false end
+	lookCameraDown()
+	if typeof(fireproximityprompt) == "function" then
+		pcall(function() fireproximityprompt(prompt, 0) end)
+	end
+	if not activatePromptSmart(prompt, Config.smuggleHoldSeconds or 2) then
+		return false
+	end
+	if not waitInterruptible(0.04) then return false end
+	if typeof(fireproximityprompt) == "function" then
+		lookCameraDown()
+		pcall(function() fireproximityprompt(prompt, 0) end)
+	end
+	holdE(0.12, prompt)
+	return true
+end
+
+local function activateSellPromptFast(prompt)
+	if not prompt or not prompt.Parent then return false end
+	lookCameraDown()
+	pcall(function()
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = math.max(tonumber(prompt.MaxActivationDistance) or 0, 100)
+	end)
+	if typeof(fireproximityprompt) == "function" then
+		pcall(function() fireproximityprompt(prompt, 0) end)
+		task.wait(0.01)
+		pcall(function() fireproximityprompt(prompt, 0) end)
+		return true
+	end
+	if activatePromptSmart(prompt, 0.08) then
+		return true
+	end
+	return tapPrompt(prompt)
+end
+
+local function buySmuggleItemTimes(itemName, nearPos, times)
+	local desired = math.max(1, math.floor((times or 3) + 0.5))
+	local startSnapshot = getBackpackItemSnapshot(itemName)
+	local maxAttemptsPerItem = 10
+
+	for idx = 1, desired do
+		local bought = false
+
+		for attempt = 1, maxAttemptsPerItem do
+			if isActionCancelled() then return false, nil end
+
+			local prompt, pos = findNearestSmugglePurchasePrompt(itemName, nearPos)
+			if not prompt then
+				setStatus("нет prompt покупки")
+				return false, nil
+			end
+
+			local root = getRootPart()
+			if pos and root and (root.Position - pos).Magnitude > 4.6 then
+				if not smartTeleportTo(pos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
+					return false, nil
+				end
+				if not waitInterruptible(0.14) then return false, nil end
+			end
+
+			if pos then
+				holdFootAtPosition(Vector3.new(pos.X, pos.Y, pos.Z), 0.28)
+			end
+
+			local beforeSnapshot = getBackpackItemSnapshot(itemName)
+			setStatus(string.format("покупка %d/%d (попытка %d)", idx, desired, attempt))
+			if not activateBuyPromptRobust(prompt) then
+				return false, nil
+			end
+
+			local got, afterSnapshot = waitForBackpackProgress(itemName, beforeSnapshot, 2.2)
+			if got then
+				setStatus(string.format("взято %d/%d", idx, desired))
+				bought = true
+				break
+			end
+
+			notify(string.format("%s не взялся (%d/%d), повтор", tostring(itemName), idx, desired))
+			if not waitInterruptible(0.16) then return false, nil end
+		end
+
+		if not bought then
+			local current = getBackpackItemSnapshot(itemName)
+			local have = math.max(0, snapshotUnits(current) - snapshotUnits(startSnapshot))
+			setStatus(string.format("взято %d/%d", have, desired))
+			notify(string.format("не удалось взять %d/%d %s", have, desired, tostring(itemName)))
+			return false, nil
+		end
+
+		if not waitInterruptible(0.12) then return false, nil end
+	end
+
+	local endSnapshot = getBackpackItemSnapshot(itemName)
+	return true, {
+		itemName = itemName,
+		boughtCount = desired,
+		startSnapshot = startSnapshot,
+		endSnapshot = endSnapshot,
+	}
+end
+
+local function getBackpackUnitsByItems(itemNames)
+	local map = {}
+	for _, itemName in ipairs(itemNames or {}) do
+		if map[itemName] == nil then
+			map[itemName] = snapshotUnits(getBackpackItemSnapshot(itemName))
+		end
+	end
+	return map
+end
+
+local function computeSellRemovedProgress(itemNames, unitsBeforeByItem, expectedRemovedByItem, unitsNowByItem)
+	local removedOk = true
+	local removedTotal = 0
+	for _, itemName in ipairs(itemNames or {}) do
+		local beforeUnits = unitsBeforeByItem[itemName] or 0
+		local nowUnits = unitsNowByItem[itemName] or 0
+		local expected = math.max(0, expectedRemovedByItem[itemName] or 0)
+		local removed = math.max(0, beforeUnits - nowUnits)
+		removedTotal += removed
+		if removed < expected then
+			removedOk = false
+		end
+	end
+	return removedOk, removedTotal
+end
+
+local function waitForSellConfirmation(itemNames, unitsBeforeByItem, briefcaseBefore, expectedRemovedByItem, timeout)
+	local deadline = os.clock() + math.max(0.12, timeout or SELL_CONFIRM_TIMEOUT_FAST)
+	local currentUnitsByItem = getBackpackUnitsByItems(itemNames)
+	local lastRemovedTotal = 0
+	local lastRemovedOk = false
+	local lastBriefcase = getBackpackNamedCount("Briefcase")
+	while os.clock() < deadline and not isActionCancelled() do
+		currentUnitsByItem = getBackpackUnitsByItems(itemNames)
+		local removedOk, removedTotal = computeSellRemovedProgress(itemNames, unitsBeforeByItem, expectedRemovedByItem, currentUnitsByItem)
+		lastRemovedTotal = removedTotal
+		lastRemovedOk = removedOk
+
+		local briefcaseNow = getBackpackNamedCount("Briefcase")
+		lastBriefcase = briefcaseNow
+		local briefcaseOk = briefcaseNow >= 1 and (briefcaseNow > briefcaseBefore or briefcaseBefore >= 1)
+		if removedOk and briefcaseOk then
+			return true, currentUnitsByItem, briefcaseNow, removedTotal, true
+		end
+		task.wait(0.03)
+	end
+	return false, currentUnitsByItem, lastBriefcase, lastRemovedTotal, lastRemovedOk
+end
+
+local function sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expectedRemovedByItem)
+	itemNames = itemNames or {}
+	expectedRemovedByItem = expectedRemovedByItem or {}
+	if #itemNames == 0 then return false end
+
+	local beforeUnitsByItem = getBackpackUnitsByItems(itemNames)
+	local beforeBriefcase = getBackpackNamedCount("Briefcase")
+	local attempts = 4
+
+	for attempt = 1, attempts do
+		if isActionCancelled() then return false end
+		local root = getRootPart()
+		local refPos = (root and root.Position) or sellPos
+		local refreshedPrompt, refreshedPos = findNearestSellPrompt(refPos, 90)
+		if refreshedPrompt then
+			sellPrompt = refreshedPrompt
+			sellPos = refreshedPos or sellPos
+		end
+		if not sellPrompt then
+			if not waitInterruptible(0.04) then return false end
+			continue
+		end
+
+		pcall(function()
+			sellPrompt.HoldDuration = 0
+			sellPrompt.MaxActivationDistance = math.max(tonumber(sellPrompt.MaxActivationDistance) or 0, 100)
+		end)
+
+		root = getRootPart()
+		if sellPos and root and (root.Position - sellPos).Magnitude > 6.8 then
+			if not smartTeleportTo(sellPos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
+				return false
+			end
+			if not waitInterruptible(0.03) then return false end
+		end
+		if sellPos then
+			holdFootAtPosition(Vector3.new(sellPos.X, sellPos.Y, sellPos.Z), 0.05)
+		end
+
+		setStatus(string.format("продажа (попытка %d)", attempt))
+		if not activateSellPromptFast(sellPrompt) then
+			return false
+		end
+
+		local sold, _unitsNowByItem, briefcaseNow, removedTotal, removedOk = waitForSellConfirmation(
+			itemNames,
+			beforeUnitsByItem,
+			beforeBriefcase,
+			expectedRemovedByItem,
+			(attempt <= 2) and SELL_CONFIRM_TIMEOUT_FAST or 1.7
+		)
+		if sold then
+			setStatus(string.format("продано: -%d, кейс:%d", removedTotal, briefcaseNow))
+			return true
+		end
+		if removedOk and removedTotal > 0 and attempt >= 2 then
+			-- Иногда игра не даёт новый Briefcase при наличии старого; считаем продажу успешной по факту списания.
+			setStatus(string.format("продано: -%d (без нового кейса)", removedTotal))
+			return true
+		end
+
+		if not waitInterruptible(SELL_RETRY_DELAY_FAST) then return false end
+	end
+
+	setStatus("продажа не подтверждена")
+	return false
+end
+
+local function findNearestSelectedCargoPrompt(nearPos)
+	local bestPrompt, bestPos, bestDist, bestName
+	for _, itemName in ipairs(getSelectedCargoItems()) do
+		local prompt, pos, dist = findNearestSmugglePurchasePrompt(itemName, nearPos)
+		if prompt and pos then
+			local d = dist
+			if d == nil then
+				local root = getRootPart()
+				local ref = nearPos or (root and root.Position) or pos
+				d = (pos - ref).Magnitude
+			end
+			if not bestDist or d < bestDist then
+				bestPrompt, bestPos, bestDist, bestName = prompt, pos, d, itemName
+			end
+		end
+	end
+	return bestPrompt, bestPos, bestName
+end
+
+local function getCargoPosition()
+	local pickup = tableToVec3(Config.waypoints and Config.waypoints.pickup)
+	local _, pos = findNearestSelectedCargoPrompt(pickup)
+	return pos
+end
+
+local function teleportToCargo()
+	local prompt, pos, itemName = findNearestSelectedCargoPrompt()
+	if not prompt or not pos then
+		setStatus("груз не найден")
+		return false
+	end
+	setStatus("ТП к грузу: " .. tostring(itemName))
+	return smartTeleportTo(pos, { forceMode = "foot", routeNoclip = true, footMode = "elevated" })
+end
+
+getPartPosition = function(inst)
+	if not inst then return nil end
+	if inst:IsA("BasePart") then return inst.Position end
+	if inst:IsA("Attachment") then return inst.WorldPosition end
+	if inst:IsA("Model") then
+		local p = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+		return p and p.Position
+	end
+	local part = inst:FindFirstAncestorWhichIsA("BasePart")
+	return part and part.Position
+end
+
+getPromptWorldPos = function(prompt)
+	if not prompt then return nil end
+	local parent = prompt.Parent
+	if not parent then return nil end
+	if parent:IsA("Attachment") then
+		return parent.WorldPosition
+	end
+	if parent:IsA("BasePart") then
+		return parent.Position
+	end
+	return getPartPosition(parent)
+end
+
+lookCameraDown = function()
+	local cam = Workspace.CurrentCamera
+	local root = getRootPart()
+	if not cam then return end
+	local camPos = cam.CFrame.Position
+	local downTarget = camPos + Vector3.new(0, -200, 0)
+	local upVec = root and root.CFrame.RightVector or Vector3.new(1, 0, 0)
+	local ok = pcall(function()
+		cam.CFrame = CFrame.lookAt(camPos, downTarget, upVec)
+	end)
+	if not ok then
+		pcall(function()
+			cam.CFrame = CFrame.new(camPos, downTarget)
+		end)
+	end
+end
+
+local function stepMove(subject, kind, anchor, targetPos, onProgress)
+	if kind == "foot" then
+		subject = getFootRoot()
+		anchor = subject
+		if not subject then return false end
+	end
+
+	local startCF = getSubjectPivot(subject, kind, anchor)
+	local startPos = startCF.Position
+	local delta = targetPos - startPos
+	local dist = delta.Magnitude
+	if dist < 0.05 then return true end
+
+	local step = math.max(0.05, Config.stepSize)
+	local dir = delta.Unit
+	local traveled = 0
+	local rotation = startCF - startCF.Position
+
+	while traveled < dist and not isActionCancelled() do
+		for _ = 1, math.max(1, Config.stepsPerFrame) do
+			if isActionCancelled() then return false end
+			traveled = math.min(traveled + step, dist)
+			local pos = startPos + dir * traveled
+			if kind == "foot" then
+				subject = getFootRoot()
+				if not subject then return false end
+				zeroVelocities(subject)
+				subject.CFrame = CFrame.new(pos) * rotation
+			else
+				setSubjectPivot(subject, kind, CFrame.new(pos) * rotation)
+			end
+			if onProgress then onProgress(traveled / dist) end
+			if traveled >= dist then break end
+		end
+		RunService.Heartbeat:Wait()
+	end
+	return true
+end
+
+local function getRotation(subject, kind, anchor)
+	local cf = getSubjectPivot(subject, kind, anchor)
+	return cf - cf.Position
+end
+
+local function instantMove(subject, kind, anchor, targetPos)
+	local rotation = getRotation(subject, kind, anchor)
+	setSubjectPivot(subject, kind, CFrame.new(targetPos) * rotation)
+end
+
+local function vehicleStepMove(subject, anchor, targetPos, onProgress)
+	local startCF = subject:GetPivot()
+	local startPos = startCF.Position
+	local _, yaw, _ = startCF:ToEulerAnglesYXZ()
+	local rotation = CFrame.Angles(0, yaw, 0)
+	local delta = targetPos - startPos
+	local dist = delta.Magnitude
+	if dist < 0.05 then return true end
+
+	local step = math.max(0.05, Config.vehicleStepSize or 0.4)
+	local dir = delta.Unit
+	local traveled = 0
+
+	while traveled < dist and not isActionCancelled() do
+		for _ = 1, math.max(1, Config.stepsPerFrame) do
+			if isActionCancelled() then return false end
+			traveled = math.min(traveled + step, dist)
+			local pos = startPos + dir * traveled
+			subject:PivotTo(CFrame.new(pos) * rotation)
+			zeroVelocities(subject)
+			if onProgress then onProgress(traveled / dist) end
+			if traveled >= dist then break end
+		end
+		RunService.Heartbeat:Wait()
+	end
+	return true
+end
+
+local function vehicleMoveTo(subject, anchor, targetPos, onProgress)
+	if Config.vehicleTpMode == "legit" then
+		return vehicleStepMove(subject, anchor, targetPos, onProgress)
+	end
+	local destCF = buildVehicleDestCF(subject, targetPos)
+	return safeVehiclePivot(subject, destCF)
+end
+
+local function vehicleTeleportAirStep(subject, targetPos)
+	if not subject or not subject.Parent then return false end
+	local startPos = subject:GetPivot().Position
+	local cruiseY = math.max(startPos.Y, targetPos.Y) + (Config.climbHeight or 35)
+	local upPos = Vector3.new(startPos.X, cruiseY, startPos.Z)
+	local flyPos = Vector3.new(targetPos.X, cruiseY, targetPos.Z)
+
+	setStatus("машина: набор...")
+	if not vehicleStepMove(subject, nil, upPos) then return false end
+
+	setStatus("машина: долёт...")
+	if not vehicleStepMove(subject, nil, flyPos, function(p)
+		setStatus(string.format("машина: долёт %.0f%%", p * 100))
+	end) then
+		return false
+	end
+
+	-- Финал: отпускаем машину в воздухе, чтобы она падала сама.
+	setStatus("машина: отпущена")
+	zeroVelocities(subject)
+	return true
+end
+
+local function vehicleTeleportTo(subject, anchor, targetPos, useSavedY, instant, vehicleAirStep)
+	setStatus("ТП машиной...")
+	local useAirStep = vehicleAirStep == true or Config.vehicleTpMode == "air_step"
+	if useAirStep and instant ~= true then
+		return vehicleTeleportAirStep(subject, targetPos)
+	end
+
+	local destPos = resolveVehicleDestPos(targetPos, subject, useSavedY == true)
+	local useLegit = Config.vehicleTpMode == "legit" and instant ~= true
+
+	if useLegit then
+		resetVehicleDriveState(subject)
+		setVehicleAnchored(subject, true)
+		vehicleStepMove(subject, anchor, destPos, function(p)
+			setStatus(string.format("машина %.0f%%", p * 100))
+		end)
+		stabilizeVehicle(subject, 3)
+		setVehicleAnchored(subject, false)
+		stabilizeVehicle(subject, 12)
+		liftVehicleIfUnderground(subject)
+		resetVehicleDriveState(subject)
+	else
+		safeVehiclePivot(subject, buildVehicleDestCF(subject, destPos))
+	end
+
+	zeroVelocities(subject)
+	return true
+end
+
+smartTeleportTo = function(targetPos, opts)
+	opts = opts or {}
+	if not targetPos then
+		notify("точка не задана")
+		return false
+	end
+	if emergencyStopRequested then
+		setStatus("остановлено")
+		return false
+	end
+	if teleportBusy then notify("телепорт занят") return false end
+
+	local forceMode = opts.forceMode
+	local useSavedY = opts.useSavedY == true
+	local withRouteNoclip = opts.routeNoclip ~= false
+
+	local subject, anchor, kind = getTeleportSubject(forceMode)
+	if not subject then return false end
+
+	teleportBusy = true
+	if kind == "foot" then
+		beginFootTeleportNoclip()
+	elseif withRouteNoclip then
+		beginRouteNoclip()
+	end
+
+	local ok, result = pcall(function()
+		if kind == "vehicle" then
+			return vehicleTeleportTo(subject, anchor, targetPos, useSavedY, opts.instant == true, opts.vehicleAirStep == true)
+		end
+		return footTeleportTo(subject, anchor, targetPos, opts)
+	end)
+
+	teleportBusy = false
+	if kind == "vehicle" and opts.skipVehicleStabilize ~= true then
+		stabilizeVehicle(subject, 4)
+	end
+	forceRestoreAllNoclip()
+
+	if not ok then
+		notify("ошибка ТП: " .. tostring(result))
+		return false
+	end
+	if emergencyStopRequested then
+		return false
+	end
+	return result ~= false
+end
+
+local function teleportToWaypoint(key, extraOpts)
+	extraOpts = extraOpts or {}
+	local pos = tableToVec3(Config.waypoints and Config.waypoints[key])
+	if not pos then
+		local label = string.upper(tostring(key))
+		notify(label .. " не задан")
+		setStatus(key .. " не задан")
+		return false
+	end
+
+	local inVehicle = getVehicle() ~= nil
+	local forceMode = extraOpts.forceMode
+	if not forceMode then
+		forceMode = inVehicle and "vehicle" or "foot"
+	end
+
+	local opts = {
+		forceMode = forceMode,
+		useSavedY = extraOpts.useSavedY == true,
+		instant = extraOpts.instant == true,
+		vehicleAirStep = extraOpts.vehicleAirStep == true,
+		skipVehicleStabilize = extraOpts.skipVehicleStabilize == true,
+		footMode = extraOpts.footMode or Config.footTpMode,
+	}
+	if extraOpts.routeNoclip ~= nil then
+		opts.routeNoclip = extraOpts.routeNoclip
+	elseif forceMode == "foot" then
+		opts.routeNoclip = false
+	end
+
+	local ok = smartTeleportTo(pos, opts)
+	if not ok then
+		notify("ТП → " .. string.upper(tostring(key)) .. " не удался")
+	end
+	return ok
+end
+
+local function teleportToPosition(pos, opts)
+	if not pos then
+		setStatus("точка не задана")
+		return false
+	end
+	opts = opts or {}
+	local target = Vector3.new(pos.X, pos.Y, pos.Z)
+	return smartTeleportTo(target, opts)
+end
+
+local function saveWaypoint(key)
+	local vehicle, seat = getVehicle()
+	local part = seat or getRootPart()
+	if not part then notify("нет позиции") return false end
+	Config.waypoints[key] = vecToTable(part.Position)
+	if key == "pickup" and vehicle then trackedVehicle = vehicle end
+	saveConfig()
+	refreshWaypointLabels()
+	notify(key .. " сохранён")
+	setStatus(key .. " сохранён")
+	return true
+end
+
+local function saveFootWaypoint(key)
+	local root = getRootPart()
+	if not root then return false end
+	Config.waypoints[key] = vecToTable(root.Position)
+	saveConfig()
+	refreshWaypointLabels()
+	notify(key .. " (ноги) сохранён")
+	return true
+end
+
+local function saveVehicleWaypoint(key, label)
+	local vehicle, seat = getVehicle()
+	if not vehicle or not seat then
+		setStatus("сядь в машину")
+		return false
+	end
+	Config.waypoints[key] = vecToTable(seat.Position)
+	Config.waypoints.carSeat = vecToTable(seat.Position)
+	trackedVehicle = vehicle
+	saveConfig()
+	setStatus((label or key) .. " сохранён")
+	return true
+end
+
+local function getCarReturnPosition()
+	local vehicle = findMyVehicle()
+	if not vehicle then return nil end
+	local cf = vehicle:GetPivot()
+	return cf.Position + cf.RightVector * -10
+end
+
+local function getSmuggleWaypoints()
+	local pickup = tableToVec3(Config.waypoints and Config.waypoints.pickup)
+	local dropoff = tableToVec3(Config.waypoints and Config.waypoints.dropoff)
+	local footZone = tableToVec3(Config.waypoints and Config.waypoints.footZone)
+	if not pickup or not dropoff or not footZone then
+		setStatus("задай PICKUP / DROPOFF / FOOT")
+		return nil, nil, nil
+	end
+	return pickup, dropoff, footZone
+end
+
+local function getSmuggleCarWaypoints(showError)
+	local carPickup = tableToVec3(Config.waypoints and Config.waypoints.carPickup)
+	local carDropoff = tableToVec3(Config.waypoints and Config.waypoints.carDropoff)
+	if not carPickup or not carDropoff then
+		if showError then
+			setStatus("задай CAR PICKUP / CAR DROPOFF")
+		end
+		return nil, nil
+	end
+	return carPickup, carDropoff
+end
+
+local function teleportFootForCycle(pos, phaseName, footMode)
+	if isActionCancelled() then return false end
+	setPhase(phaseName or "move")
+	return smartTeleportTo(pos, {
+		forceMode = "foot",
+		routeNoclip = true,
+		footMode = footMode or "elevated",
+	})
+end
+
+local function returnToVehicleAndSeat(vehicle, phaseName)
+	local seat = getDriveSeatFromVehicle(vehicle)
+	if not seat then
+		setStatus("нет DriveSeat")
+		return false
+	end
+	if not teleportFootForCycle(seat.Position, phaseName or "to-car", "elevated") then
+		return false
+	end
+	setVehicleFrozenState(vehicle, false)
+	if tryEnterVehicleSeat(vehicle, seat, 2.8) then
+		return true
+	end
+	setVehicleFrozenState(vehicle, true)
+	if not waitInterruptible(0.08) then return false end
+	setVehicleFrozenState(vehicle, false)
+	return tryEnterVehicleSeat(vehicle, seat, 2.4)
+end
+
+local function runCargoPickupSequenceFoot()
+	if emergencyStopRequested then
+		setStatus("остановлено")
+		return false
+	end
+
+	local pickup, dropoff, footZone = getSmuggleWaypoints()
+	if not pickup or not dropoff or not footZone then
+		return false
+	end
+	local selectedItems = getSelectedCargoItems()
+	if #selectedItems == 0 then
+		setStatus("грузы не выбраны")
+		return false
+	end
+
+	if not teleportFootForCycle(pickup, "to-pickup", "elevated") then
+		return false
+	end
+	if not waitInterruptible(0.1) then return false end
+
+	local expectedRemovedByItem = {}
+	for idx, itemName in ipairs(selectedItems) do
+		setPhase(string.format("find-item %d/%d", idx, #selectedItems))
+		local rootNow = getRootPart()
+		local nearRef = rootNow and rootNow.Position or pickup
+		local _, cargoPos = findNearestSmugglePurchasePrompt(itemName, nearRef)
+		if not cargoPos then
+			setStatus("нет предмета: " .. tostring(itemName))
+			return false
+		end
+
+		if not teleportFootForCycle(cargoPos, string.format("to-item %d/%d", idx, #selectedItems), "step") then
+			return false
+		end
+		if not waitInterruptible(0.1) then return false end
+
+		setPhase(string.format("buy-item %d/%d", idx, #selectedItems))
+		local buyOk, buyMeta = buySmuggleItemTimes(itemName, cargoPos, SMUGGLE_BUY_COUNT_PER_ITEM)
+		if not buyOk then
+			return false
+		end
+		local boughtNow = math.max(1, math.floor((buyMeta and buyMeta.boughtCount) or 1))
+		expectedRemovedByItem[itemName] = (expectedRemovedByItem[itemName] or 0) + boughtNow
+		if not waitInterruptible(0.12) then return false end
+	end
+
+	if not teleportFootForCycle(dropoff, "to-dropoff", "elevated") then
+		return false
+	end
+	if not waitInterruptible(0.02) then return false end
+
+	setPhase("sell-smuggle")
+	local sellPrompt, sellPos = findNearestSellPrompt(dropoff, 90)
+	if not sellPrompt then
+		setStatus("нет Sell All Smuggle")
+		notify("prompt Sell All Smuggle не найден")
+		return false
+	end
+	if not sellSmuggleWithVerification(sellPrompt, sellPos, selectedItems, expectedRemovedByItem) then
+		return false
+	end
+	if not waitInterruptible(0.02) then return false end
+
+	if not teleportFootForCycle(footZone, "to-foot", "elevated") then
+		return false
+	end
+	if not waitInterruptible(0.1) then return false end
+
+	setPhase("laundry")
+	local laundryPrompt, laundryPos = findNearestPromptByText("laundry dirty money", footZone, 90)
+	if not laundryPrompt then
+		setStatus("нет Laundry Dirty Money")
+		notify("prompt Laundry Dirty Money не найден")
+		return false
+	end
+	local root = getRootPart()
+	if laundryPos and root and (root.Position - laundryPos).Magnitude > 5 then
+		if not teleportFootForCycle(laundryPos, "to-laundry-prompt", "step") then return false end
+	end
+	if not activateBuyPromptRobust(laundryPrompt) then
+		return false
+	end
+	if not waitInterruptible(0.15) then return false end
+
+	setPhase("idle")
+	setStatus("цикл завершён")
+	return true
+end
+
+local function runCargoPickupSequenceVehicle()
+	if emergencyStopRequested then
+		setStatus("остановлено")
+		return false
+	end
+
+	local pickup, dropoff, footZone = getSmuggleWaypoints()
+	if not pickup or not dropoff or not footZone then
+		return false
+	end
+	local carPickup, carDropoff = getSmuggleCarWaypoints(true)
+	if not carPickup or not carDropoff then
+		return false
+	end
+
+	local vehicle, seat = getVehicle()
+	if not vehicle then
+		setStatus("сядь в машину для авто-цикла")
+		return false
+	end
+	seat = seat or getDriveSeatFromVehicle(vehicle)
+	if not seat then
+		setStatus("нет DriveSeat")
+		return false
+	end
+	trackedVehicle = vehicle
+
+	local function failWithUnfreeze(statusText)
+		if statusText then setStatus(statusText) end
+		setVehicleFrozenState(vehicle, false)
+		return false
+	end
+
+	setPhase("car-pickup")
+	if not vehicleInstantTeleportToPos(vehicle, carPickup, true) then
+		return failWithUnfreeze("не смог тп машину")
+	end
+	setVehicleFrozenState(vehicle, true)
+	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+	if not forceExitVehicleNow() then
+		return failWithUnfreeze("не вышел из машины")
+	end
+	setVehicleFrozenState(vehicle, true)
+
+	if not teleportFootForCycle(pickup, "to-pickup", "elevated") then
+		return failWithUnfreeze("не дошёл до pickup")
+	end
+	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+
+	local selectedItems = getSelectedCargoItems()
+	if #selectedItems == 0 then
+		return failWithUnfreeze("грузы не выбраны")
+	end
+
+	local expectedRemovedByItem = {}
+	for idx, itemName in ipairs(selectedItems) do
+		setPhase(string.format("find-item %d/%d", idx, #selectedItems))
+		local rootNow = getRootPart()
+		local nearRef = rootNow and rootNow.Position or pickup
+		local _, cargoPos = findNearestSmugglePurchasePrompt(itemName, nearRef)
+		if not cargoPos then
+			return failWithUnfreeze("нет предмета: " .. tostring(itemName))
+		end
+		if not teleportFootForCycle(cargoPos, string.format("to-item %d/%d", idx, #selectedItems), "step") then
+			return failWithUnfreeze("не дошёл до предмета")
+		end
+		if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+
+		setPhase(string.format("buy-item %d/%d", idx, #selectedItems))
+		local buyOk, buyMeta = buySmuggleItemTimes(itemName, cargoPos, SMUGGLE_BUY_COUNT_PER_ITEM)
+		if not buyOk then
+			return failWithUnfreeze("покупка не удалась")
+		end
+		local boughtNow = math.max(1, math.floor((buyMeta and buyMeta.boughtCount) or 1))
+		expectedRemovedByItem[itemName] = (expectedRemovedByItem[itemName] or 0) + boughtNow
+		if not waitInterruptible(0.1) then return failWithUnfreeze("стоп") end
+	end
+
+	if not returnToVehicleAndSeat(vehicle, "к машине (pickup)") then
+		return failWithUnfreeze("не смог сесть в машину")
+	end
+	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+
+	setPhase("car-dropoff")
+	if not vehicleInstantTeleportToPos(vehicle, carDropoff, false) then
+		return failWithUnfreeze("не смог тп машину")
+	end
+	setVehicleFrozenState(vehicle, true)
+	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+	if not forceExitVehicleNow() then
+		return failWithUnfreeze("не вышел из машины")
+	end
+	setVehicleFrozenState(vehicle, true)
+
+	if not teleportFootForCycle(dropoff, "to-dropoff", "elevated") then
+		return failWithUnfreeze("не дошёл до dropoff")
+	end
+	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+
+	setPhase("sell-smuggle")
+	local sellPrompt, sellPos = findNearestSellPrompt(dropoff, 90)
+	if not sellPrompt then
+		return failWithUnfreeze("нет Sell All Smuggle")
+	end
+	local root = getRootPart()
+	if sellPos and root and (root.Position - sellPos).Magnitude > 5 then
+		if not teleportFootForCycle(sellPos, "to-sell-prompt", "step") then
+			return failWithUnfreeze("не дошёл до сдачи")
+		end
+	end
+	if not sellSmuggleWithVerification(sellPrompt, sellPos, selectedItems, expectedRemovedByItem) then
+		return failWithUnfreeze("сдача не подтверждена")
+	end
+	if not waitInterruptible(0.1) then return failWithUnfreeze("стоп") end
+
+	if not teleportFootForCycle(footZone, "to-foot", "elevated") then
+		return failWithUnfreeze("не дошёл до foot")
+	end
+	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
+
+	setPhase("laundry")
+	local laundryPrompt, laundryPos = findNearestPromptByText("laundry dirty money", footZone, 90)
+	if not laundryPrompt then
+		return failWithUnfreeze("нет Laundry Dirty Money")
+	end
+	root = getRootPart()
+	if laundryPos and root and (root.Position - laundryPos).Magnitude > 5 then
+		if not teleportFootForCycle(laundryPos, "to-laundry-prompt", "step") then
+			return failWithUnfreeze("не дошёл до стирки")
+		end
+	end
+	if not activateBuyPromptRobust(laundryPrompt) then
+		return failWithUnfreeze("laundry fail")
+	end
+	if not waitInterruptible(0.12) then return failWithUnfreeze("стоп") end
+
+	if not returnToVehicleAndSeat(vehicle, "к машине (dropoff)") then
+		return failWithUnfreeze("не смог сесть в машину")
+	end
+
+	setPhase("idle")
+	setStatus("цикл завершён (машина)")
+	return true
+end
+
+local function runCargoPickupSequence()
+	return runCargoPickupSequenceFoot()
+end
+
+local function runAutoSmuggleLoop()
+	clearEmergencyStop()
+	if Config.vehicleFlingEnabled then
+		setVehicleFlingEnabled(false)
+	end
+	setAutoSmuggleFirstPerson(true)
+	stopThread("autoSmuggle")
+	startThread("autoSmuggle", function()
+		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
+			applyFirstPersonCamera()
+			local ok, cycleOk = pcall(runCargoPickupSequence)
+			if not ok then
+				setStatus("ошибка цикла: " .. tostring(cycleOk))
+				waitInterruptible(0.8)
+			elseif not cycleOk then
+				setStatus("цикл не завершён")
+				waitInterruptible(0.8)
+			else
+				waitInterruptible(0.35)
+			end
+		end
+		forceRestoreAllNoclip()
+		restoreSmugglePromptSettings()
+		setAutoSmuggleFirstPerson(false)
+		setPhase("idle")
+	end)
+end
+
+local function getGateTargets()
+	local map = Workspace:FindFirstChild("Map")
+	if not map then return {} end
+	local targets = {}
+	local streetProps = map:FindFirstChild("Street Props")
+	local barriers = streetProps and streetProps:FindFirstChild("Barriers")
+	local borderInner = map:FindFirstChild("Border") and map.Border:FindFirstChild("Border")
+	local vehicleGates = borderInner and borderInner:FindFirstChild("VehicleGates")
+	if barriers then table.insert(targets, barriers) end
+	if vehicleGates then table.insert(targets, vehicleGates) end
+	return targets
+end
+
+local function setPartGateHidden(part, hidden)
+	if not part:IsA("BasePart") then return end
+	if hidden then
+		if not gatePartState[part] then
+			gatePartState[part] = {
+				Transparency = part.Transparency,
+				LocalTransparencyModifier = part.LocalTransparencyModifier,
+				CanCollide = part.CanCollide,
+				CanQuery = part.CanQuery,
+				CanTouch = part.CanTouch,
+			}
+		end
+		part.Transparency = 1
+		part.LocalTransparencyModifier = 1
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+	else
+		local saved = gatePartState[part]
+		if saved then
+			part.Transparency = saved.Transparency
+			part.LocalTransparencyModifier = saved.LocalTransparencyModifier
+			part.CanCollide = saved.CanCollide
+			part.CanQuery = saved.CanQuery
+			part.CanTouch = saved.CanTouch
+			gatePartState[part] = nil
+		end
+	end
+end
+
+local function setGateFolderHidden(folder, hidden)
+	if not folder then return end
+	if folder:IsA("BasePart") then
+		setPartGateHidden(folder, hidden)
+	end
+	for _, desc in ipairs(folder:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			setPartGateHidden(desc, hidden)
+		end
+	end
+end
+
+local function setGatesRemoved(removed)
+	if not removed then
+		Config.gatesRemoved = false
+		saveConfig()
+		notify("возврат гейтов невозможен без перезахода")
+		return false
+	end
+
+	local targets = getGateTargets()
+	if #targets == 0 then
+		notify("гейты не найдены")
+		return false
+	end
+
+	local deletedCount = 0
+	for _, folder in ipairs(targets) do
+		if folder and folder.Parent then
+			local ok = pcall(function()
+				folder:Destroy()
+			end)
+			if ok then
+				deletedCount += 1
+			end
+		end
+	end
+
+	if deletedCount <= 0 then
+		notify("не удалось удалить гейты")
+		return false
+	end
+
+	Config.gatesRemoved = true
+	saveConfig()
+	notify("гейты удалены намертво (до перезахода)")
+	return true
+end
+
+local function toggleGates()
+	if Config.gatesRemoved then
+		notify("гейты уже удалены")
+		return
+	end
+	setGatesRemoved(true)
+end
+
+local function teleportToMyCar()
+	local vehicle, seat = findMyVehicle()
+	if not vehicle then
+		notify("машина не найдена")
+		return false
+	end
+	trackedVehicle = vehicle
+	local pos = getCarReturnPosition() or (seat and seat.Position) or vehicle:GetPivot().Position
+	if getVehicle() then
+		return smartTeleportTo(pos, {
+			forceMode = "vehicle",
+			routeNoclip = true,
+			vehicleAirStep = true,
+			skipVehicleStabilize = true,
+		})
+	end
+	return smartTeleportTo(pos, { forceMode = "foot", routeNoclip = false })
+end
+
+-- ESP (module)
+local espApi = {
+	clear = function() end,
+	refresh = function() end,
+	bind = function() end,
+}
+
+local function initEspApi()
+	local factory = loadOptionalModule("modules/esp.lua")
+	if type(factory) ~= "function" then
+		return false
+	end
+	local ok, api = pcall(factory, {
+		Players = Players,
+		Workspace = Workspace,
+		Config = Config,
+		getLocalPlayer = getLocalPlayer,
+		trackConn = trackConn,
+	})
+	if not ok or type(api) ~= "table" then
+		return false
+	end
+	if type(api.clear) == "function" then espApi.clear = api.clear end
+	if type(api.refresh) == "function" then espApi.refresh = api.refresh end
+	if type(api.bind) == "function" then espApi.bind = api.bind end
+	return true
+end
+
+local function runAutoWorkLoop()
+	stopThread("autoWork")
+	startThread("autoWork", function()
+		while mounted and threads.autoWork and Config.autoWork do
+			setStatus("авто-работа: WIP")
+			task.wait(2)
+		end
+	end)
+end
+
+local function mountMain(ctx)
+	local ui = ctx.ui
+	local page = ctx.pages.main
+	local makeFlowPanel = ui.makeFlowPanel
+	local makeFlowToggle = ui.makeFlowToggle
+	local makeStatRow = ui.makeStatRow
+	local makeScrollPage = ui.makeScrollPage
+	local COLORS = ui.COLORS
+	local L = ctx.translate or tr
+	local registerLocale = ctx.registerLocale
+
+	local scroll = makeScrollPage(page)
+	local content = Instance.new("Frame")
+	content.Size = UDim2.new(1, 0, 0, 1040)
+	content.BackgroundTransparency = 1
+	content.LayoutOrder = 1
+	content.Parent = scroll
+
+	local statusPanel = makeFlowPanel(content, L("panel_status", "Статус"), 200, 200, 0, 0, nil, "panel_status")
+	statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
+	phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
+	statusValueLabel.Text = State.status
+	phaseValueLabel.Text = State.phase
+
+	local points = makeFlowPanel(content, L("panel_points", "Точки"), 200, 200, 216, 0, 35, "panel_points")
+	pickupValueLabel = makeStatRow(points, L("stat_pickup", "PICKUP"), 1, "stat_pickup")
+	dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
+	footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
+	cargoValueLabel = makeStatRow(points, L("stat_cargo", "Груз"), 4, "stat_cargo")
+	refreshWaypointLabels()
+
+	local cargoPanel = makeFlowPanel(content, L("panel_cargo", "Выбор груза"), 420, 160, 0, 224, 40, "panel_cargo")
+	local cargoRow = Instance.new("Frame")
+	cargoRow.Size = UDim2.new(1, 0, 0, 106)
+	cargoRow.BackgroundTransparency = 1
+	cargoRow.Parent = cargoPanel
+
+	local cargoBtns = {}
+	local function getCargoIndex(items, itemName)
+		for i, name in ipairs(items) do
+			if name == itemName then return i end
+		end
+		return nil
+	end
+	local function refreshCargoBtns()
+		local selected = getSelectedCargoItems()
+		local selectedOrder = {}
+		for i, name in ipairs(selected) do
+			selectedOrder[name] = i
+		end
+		for _, b in ipairs(cargoBtns) do
+			local itemName = b:GetAttribute("CargoName")
+			local order = selectedOrder[itemName]
+			local isSelected = order ~= nil
+			b:SetAttribute("Selected", isSelected)
+			b.BackgroundColor3 = isSelected and COLORS.accentSoft or COLORS.panel
+			b.Text = isSelected and string.format("%d) %s", order, itemName) or itemName
+		end
+	end
+	for i, name in ipairs(CARGO_ITEMS) do
+		local bx = ((i - 1) % 2) * 206
+		local by = math.floor((i - 1) / 2) * 34
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0, 198, 0, 28)
+		btn.Position = UDim2.new(0, bx, 0, by)
+		btn.BackgroundColor3 = COLORS.panel
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.Gotham
+		btn.TextSize = 10
+		btn.TextColor3 = COLORS.text
+		btn.Text = name
+		btn.Parent = cargoRow
+		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 6) c.Parent = btn
+		btn:SetAttribute("CargoName", name)
+		btn:SetAttribute("Selected", false)
+		btn.MouseButton1Click:Connect(function()
+			local selected = getSelectedCargoItems()
+			local idx = getCargoIndex(selected, name)
+			if idx then
+				if #selected > 1 then
+					table.remove(selected, idx)
+				end
+			else
+				if #selected >= MAX_SELECTED_CARGO_ITEMS then
+					table.remove(selected, #selected)
+				end
+				table.insert(selected, name)
+			end
+			Config.cargoItems = sanitizeCargoSelection(selected)
+			Config.cargoItem = Config.cargoItems[1]
+			saveConfig()
+			refreshCargoBtns()
+			refreshWaypointLabels()
+		end)
+		table.insert(cargoBtns, btn)
+	end
+	refreshCargoBtns()
+
+	local ctrl = makeFlowPanel(content, L("panel_cycle", "Телепорт и цикл"), 420, 248, 0, 392, 40, "panel_cycle")
+	makeFlowToggle(ctrl, L("toggle_auto_smuggle", "Авто контрабанда (цикл)"), Config.autoSmuggle, function(v)
+		Config.autoSmuggle = v
+		if v then
+			clearEmergencyStop()
+			if Config.vehicleFlingEnabled then
+				setVehicleFlingEnabled(false)
+			end
+			runAutoSmuggleLoop()
+		else
+			stopThread("autoSmuggle")
+			forceRestoreAllNoclip()
+			restoreSmugglePromptSettings()
+			setAutoSmuggleFirstPerson(false)
+			setPhase("idle")
+		end
+		saveConfig()
+	end, 1, nil, "toggle_auto_smuggle")
+
+	local btnRow = Instance.new("Frame")
+	btnRow.Size = UDim2.new(1, 0, 0, 74)
+	btnRow.BackgroundTransparency = 1
+	btnRow.LayoutOrder = 2
+	btnRow.Parent = ctrl
+
+	local function makeBtn(text, x, y, w, cb, localeKey)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0, w, 0, 30)
+		b.Position = UDim2.new(0, x, 0, y)
+		b.BackgroundColor3 = COLORS.accentSoft
+		b.BorderSizePixel = 0
+		b.Font = Enum.Font.GothamSemibold
+		b.TextSize = 10
+		b.TextColor3 = COLORS.text
+		b.Text = text
+		b.Parent = btnRow
+		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = b
+		if type(registerLocale) == "function" and localeKey then
+			registerLocale(b, localeKey)
+		end
+		b.MouseButton1Click:Connect(function()
+			task.spawn(function()
+				clearEmergencyStop()
+				local ok, err = pcall(cb)
+				if not ok then
+					setStatus("ошибка кнопки")
+					notify("ошибка кнопки: " .. tostring(err))
+				end
+			end)
+		end)
+	end
+
+	makeBtn(L("btn_tp_pickup", "ТП -> PICKUP"), 0, 0, 128, function()
+		teleportToWaypoint("pickup", {
+			footMode = "elevated",
+			instant = true,
+			useSavedY = true,
+			skipVehicleStabilize = true,
+		})
+	end, "btn_tp_pickup")
+	makeBtn(L("btn_tp_dropoff", "ТП -> DROPOFF"), 136, 0, 128, function()
+		teleportToWaypoint("dropoff", {
+			footMode = "elevated",
+			instant = true,
+			useSavedY = true,
+			skipVehicleStabilize = true,
+		})
+	end, "btn_tp_dropoff")
+	makeBtn(L("btn_tp_foot", "ТП -> FOOT"), 0, 34, 128, function()
+		teleportToWaypoint("footZone", {
+			footMode = "elevated",
+			instant = true,
+			useSavedY = true,
+			skipVehicleStabilize = true,
+		})
+	end, "btn_tp_foot")
+end
+
+local function mountFeatures(ctx)
+	local extMount = loadOptionalModule("modules/features-tab.lua")
+	if type(extMount) ~= "function" then
+		return
+	end
+
+	pcall(extMount, {
+		values = {
+			espEnabled = Config.espEnabled,
+			noclipFoot = Config.noclipFoot,
+			noclipVehicles = Config.noclipVehicles,
+			forcePromptHoldZero = Config.forcePromptHoldZero,
+			vehicleBoostEnabled = Config.vehicleBoostEnabled,
+			vehicleStopOnS = Config.vehicleStopOnS,
+			vehicleFlingEnabled = Config.vehicleFlingEnabled,
+			gatesRemoved = Config.gatesRemoved,
+		},
+		onToggleEsp = function(v)
+			Config.espEnabled = v
+			if not v then espApi.clear() else espApi.refresh() end
+			saveConfig()
+		end,
+		onToggleNoclipFoot = function(v)
+			Config.noclipFoot = v
+			if not v then
+				local c = getCharacter()
+				if c then restoreCharacterCollision(c) end
+			end
+			saveConfig()
+		end,
+		onToggleNoclipVehicle = function(v)
+			Config.noclipVehicles = v
+			if not v then
+				local vh = findMyVehicle()
+				if vh then restoreNoclip(vh) end
+			end
+			saveConfig()
+		end,
+		onTogglePromptHoldZero = function(v)
+			Config.forcePromptHoldZero = v
+			if v then
+				applyPromptHoldZeroSweep()
+			else
+				stopThread("promptHoldZeroSweep")
+			end
+			saveConfig()
+		end,
+		onToggleVehicleBoost = function(v)
+			Config.vehicleBoostEnabled = v
+			local vehicle = getVehicle() or trackedVehicle
+			if v then
+				if vehicle then applyVehicleDriveBoost(vehicle) end
+			elseif vehicle then
+				resetVehicleDriveBoost(vehicle)
+			end
+			saveConfig()
+		end,
+		onToggleVehicleStopOnS = function(v)
+			Config.vehicleStopOnS = v
+			saveConfig()
+		end,
+		onToggleVehicleFling = function(v)
+			setVehicleFlingEnabled(v)
+		end,
+		onInstantStopVehicle = function()
+			instantStopVehicle()
+			notify("машина остановлена")
+		end,
+		onDeleteGates = function()
+			local removed = setGatesRemoved(true)
+			return removed or Config.gatesRemoved
+		end,
+		translate = ctx.translate or tr,
+		registerLocale = ctx.registerLocale,
+		onLocaleChanged = function(cb)
+			if type(cb) == "function" then
+				table.insert(localeRefreshers, cb)
+			end
+		end,
+	}, ctx)
+end
+
+local function mountSettings(ctx)
+	local extMount = loadOptionalModule("modules/settings-tab.lua")
+	if type(extMount) ~= "function" then
+		return
+	end
+
+	local function onSet(key, v)
+		if key == "stepSize" then
+			Config.stepSize = math.clamp(v, 0.05, 1)
+		elseif key == "stepsPerFrame" then
+			Config.stepsPerFrame = math.clamp(math.floor(v + 0.5), 1, 12)
+		elseif key == "climbHeight" then
+			Config.climbHeight = math.clamp(v, 10, 90)
+		elseif key == "descendStepMult" then
+			Config.descendStepMult = math.clamp(v, 0.2, 1)
+		elseif key == "finalHoldSeconds" then
+			Config.finalHoldSeconds = math.clamp(v, 0, 1.2)
+		elseif key == "vehicleBoostMaxSpeed" then
+			Config.vehicleBoostMaxSpeed = math.clamp(math.floor(v + 0.5), 20, 500)
+			local vehicle = getVehicle() or trackedVehicle
+			if vehicle and Config.vehicleBoostEnabled then
+				resetVehicleDriveBoost(vehicle)
+				applyVehicleDriveBoost(vehicle)
+			end
+		elseif key == "vehicleFlingOrbitSpeed" then
+			Config.vehicleFlingOrbitSpeed = math.clamp(v, 2, 60)
+		elseif key == "vehicleFlingForeAft" then
+			Config.vehicleFlingForeAft = math.clamp(v, 0.5, 12)
+		elseif key == "vehicleFlingSide" then
+			Config.vehicleFlingSide = math.clamp(v, 0.5, 12)
+		elseif key == "vehicleFlingHeightOffset" then
+			Config.vehicleFlingHeightOffset = math.clamp(v, -4, 3)
+		elseif key == "vehicleFlingBobAmplitude" then
+			Config.vehicleFlingBobAmplitude = math.clamp(v, 0, 4)
+		elseif key == "vehicleFlingLinearPower" then
+			Config.vehicleFlingLinearPower = math.clamp(v, 40, 900)
+		elseif key == "vehicleFlingSpinPower" then
+			Config.vehicleFlingSpinPower = math.clamp(v, 60, 1800)
+		elseif key == "vehicleFlingHoldSeconds" then
+			Config.vehicleFlingHoldSeconds = math.clamp(v, 0.3, 10)
+		elseif key == "vehicleFlingRegrabDelay" then
+			Config.vehicleFlingRegrabDelay = math.clamp(v, 0, 0.5)
+		elseif key == "vehicleFlingUltraMult" then
+			Config.vehicleFlingUltraMult = math.clamp(v, 0.5, 3.5)
+		elseif key == "applyFlingPreset" then
+			local presets = {
+				soft = { orbitSpeed = 8, foreAft = 4, side = 3, heightOffset = -0.4, bobAmplitude = 0.9, linearPower = 220, spinPower = 320, holdSeconds = 1.8, regrabDelay = 0.06, ultraMult = 1.0 },
+				user = { orbitSpeed = 20, foreAft = 12, side = 3.6, heightOffset = -0.8, bobAmplitude = 3.2, linearPower = 900, spinPower = 1800, holdSeconds = 2.4, regrabDelay = 0.2, ultraMult = 2.0 },
+				ultra = { orbitSpeed = 42, foreAft = 12, side = 8, heightOffset = -1.2, bobAmplitude = 3.8, linearPower = 900, spinPower = 1800, holdSeconds = 3.6, regrabDelay = 0.02, ultraMult = 3.0 },
+			}
+			local p = presets[tostring(v or "")]
+			if not p then return end
+			Config.vehicleFlingOrbitSpeed = math.clamp(p.orbitSpeed, 2, 60)
+			Config.vehicleFlingForeAft = math.clamp(p.foreAft, 0.5, 12)
+			Config.vehicleFlingSide = math.clamp(p.side, 0.5, 12)
+			Config.vehicleFlingHeightOffset = math.clamp(p.heightOffset, -4, 3)
+			Config.vehicleFlingBobAmplitude = math.clamp(p.bobAmplitude, 0, 4)
+			Config.vehicleFlingLinearPower = math.clamp(p.linearPower, 40, 900)
+			Config.vehicleFlingSpinPower = math.clamp(p.spinPower, 60, 1800)
+			Config.vehicleFlingHoldSeconds = math.clamp(p.holdSeconds, 0.3, 10)
+			Config.vehicleFlingRegrabDelay = math.clamp(p.regrabDelay, 0, 0.5)
+			Config.vehicleFlingUltraMult = math.clamp(p.ultraMult, 0.5, 3.5)
+			saveConfig()
+			setStatus("fling preset: " .. tostring(v))
+			return
+		else
+			return
+		end
+		saveConfig()
+	end
+
+	pcall(extMount, {
+		values = {
+			stepSize = Config.stepSize,
+			stepsPerFrame = Config.stepsPerFrame,
+			climbHeight = Config.climbHeight,
+			descendStepMult = Config.descendStepMult or 0.45,
+			finalHoldSeconds = Config.finalHoldSeconds or 0.35,
+			vehicleBoostMaxSpeed = Config.vehicleBoostMaxSpeed or 60,
+			vehicleFlingOrbitSpeed = Config.vehicleFlingOrbitSpeed or 20,
+			vehicleFlingForeAft = Config.vehicleFlingForeAft or 12,
+			vehicleFlingSide = Config.vehicleFlingSide or 3.6,
+			vehicleFlingHeightOffset = Config.vehicleFlingHeightOffset or -0.8,
+			vehicleFlingBobAmplitude = Config.vehicleFlingBobAmplitude or 3.2,
+			vehicleFlingLinearPower = Config.vehicleFlingLinearPower or 900,
+			vehicleFlingSpinPower = Config.vehicleFlingSpinPower or 1800,
+			vehicleFlingHoldSeconds = Config.vehicleFlingHoldSeconds or 2.4,
+			vehicleFlingRegrabDelay = Config.vehicleFlingRegrabDelay or 0.2,
+			vehicleFlingUltraMult = Config.vehicleFlingUltraMult or 2.0,
+		},
+		onSet = onSet,
+		translate = ctx.translate or tr,
+		registerLocale = ctx.registerLocale,
+		onLocaleChanged = function(cb)
+			if type(cb) == "function" then
+				table.insert(localeRefreshers, cb)
+			end
+		end,
+	}, ctx)
+end
+
+function M.getUiLanguage()
+	return (type(Config.uiLanguage) == "string" and Config.uiLanguage:lower() == "en") and "en" or "ru"
+end
+
+function M.setUiLanguage(lang)
+	local normalized = (type(lang) == "string" and lang:lower() == "en") and "en" or "ru"
+	local changed = Config.uiLanguage ~= normalized
+	Config.uiLanguage = normalized
+	if changed then
+		saveConfig()
+	end
+	refreshWaypointLabels()
+	for _, cb in ipairs(localeRefreshers) do
+		pcall(cb, normalized)
+	end
+	return normalized
+end
+
+function M.stop()
+	emergencyStopRequested = true
+	mounted = false
+	Config.autoSmuggle = false
+	Config.vehicleFlingEnabled = false
+	setAutoSmuggleFirstPerson(false)
+	forceRestoreAllNoclip()
+	restoreSmugglePromptSettings()
+	stopThread("autoSmuggle")
+	stopThread("vehicleFling")
+	stopThread("promptHoldZero")
+	stopThread("promptHoldZeroSweep")
+	stopThread("autoWork")
+	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+	table.clear(conns)
+	table.clear(localeRefreshers)
+	espApi.clear()
+	local vehicle = findMyVehicle()
+	if vehicle then
+		resetVehicleDriveBoost(vehicle)
+		hardRestoreCollision(vehicle)
+		setVehicleAnchored(vehicle, false)
+		liftVehicleIfUnderground(vehicle)
+	end
+	local char = getCharacter()
+	if char then restoreCharacterCollision(char) end
+	teleportBusy = false
+	notify("выгружен")
+end
+
+function M.mount(ctx)
+	if mounted then return end
+	mounted = true
+	clearEmergencyStop()
+	setAutoSmuggleFirstPerson(false)
+	translateFn = type(ctx.translate) == "function" and ctx.translate or function(key, fallback)
+		return fallback or key
+	end
+	ctxRef.player = ctx.player
+	loadConfig()
+	initEspApi()
+	local startupChar = getCharacter()
+	if startupChar then restoreCharacterCollision(startupChar) end
+	if Config.gatesRemoved then setGatesRemoved(true) end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		espApi.bind(player)
+	end
+	trackConn(Players.PlayerAdded:Connect(function(player)
+		espApi.bind(player)
+	end))
+	trackConn(Workspace.DescendantAdded:Connect(function(inst)
+		if Config.forcePromptHoldZero and inst:IsA("ProximityPrompt") then
+			forcePromptHoldZero(inst)
+		end
+	end))
+
+	trackConn(UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
+		if input.KeyCode == Enum.KeyCode.End then
+			requestEmergencyStop("END: экстренная остановка")
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.S and Config.vehicleStopOnS and getVehicle() then
+			instantStopVehicle()
+		end
+	end))
+
+	local hum = getHumanoid()
+	if hum then
+		trackConn(hum:GetPropertyChangedSignal("SeatPart"):Connect(function()
+			trackVehicleFromSeat(hum.SeatPart)
+			local vehicle = getVehicle()
+			if vehicle and Config.vehicleBoostEnabled then
+				applyVehicleDriveBoost(vehicle)
+			end
+		end))
+		trackVehicleFromSeat(hum.SeatPart)
+	end
+
+	mountMain(ctx)
+	mountFeatures(ctx)
+	mountSettings(ctx)
+	applyPromptHoldZeroSweep()
+	runPromptHoldZeroLoop()
+
+	trackConn(RunService.Heartbeat:Connect(function()
+		local now = os.clock()
+		if firstPersonAutoActive then
+			applyFirstPersonCamera()
+		end
+		if Config.noclipFoot or Config.noclipVehicles or routeNoclipActive then
+			local interval = (routeNoclipActive or teleportBusy) and NOCLIP_UPDATE_INTERVAL_ROUTE or NOCLIP_UPDATE_INTERVAL_IDLE
+			if (now - lastNoclipUpdateAt) >= interval then
+				updateNoclip()
+				lastNoclipUpdateAt = now
+			end
+		end
+		if Config.espEnabled then espApi.refresh() end
+		if Config.vehicleBoostEnabled then
+			local vehicle = getVehicle()
+			if vehicle then
+				if (now - lastBoostRetuneAt) >= BOOST_RETUNE_INTERVAL then
+					applyVehicleDriveBoost(vehicle)
+					lastBoostRetuneAt = now
+				end
+				applyVehicleBoostAssist(vehicle)
+			end
+		end
+	end))
+
+	setStatus("готов")
+	setPhase("idle")
+	notify("загружен " .. BUILD)
+end
+
+return M
+
+-- epbr-bootstrap.lua — launcher tail (bundle only, UTF-8)
+
+end)()
+
+local hubBootstrapped = false
+local uiRoot
+local uiInstance
+local aboutLabel
+local tgButton
+local localeBindings = {}
+local localeLib
+local uiLanguage = "ru"
+local CONFIG_FILE = "el-paso-br-config.json"
+
+local function normalizeLanguage(lang)
+	return (type(lang) == "string" and lang:lower() == "en") and "en" or "ru"
+end
+
+local function getLocaleModulePaths()
+	local paths = {}
+	local customRoot = genv and genv.EPBRLocalRoot
+	if type(customRoot) == "string" and customRoot ~= "" then
+		table.insert(paths, customRoot .. "/modules/locale.lua")
+	end
+	table.insert(paths, "el-paso-br/modules/locale.lua")
+	table.insert(paths, "modules/locale.lua")
+	return paths
+end
+
+local function loadLocaleLib()
+	if localeLib then
+		return localeLib
+	end
+	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+		return nil
+	end
+	local loader = loadstring or load
+	if type(loader) ~= "function" then
+		return nil
+	end
+	for _, path in ipairs(getLocaleModulePaths()) do
+		local okFile, exists = pcall(isfile, path)
+		if okFile and exists then
+			local okRead, src = pcall(readfile, path)
+			if okRead and type(src) == "string" and src ~= "" then
+				local chunk = loader(src, "@" .. path)
+				if chunk then
+					local okRun, mod = pcall(chunk)
+					if okRun and type(mod) == "table" then
+						localeLib = mod
+						return localeLib
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function L(key, fallback)
+	local lib = loadLocaleLib()
+	if lib and typeof(lib.t) == "function" then
+		local ok, text = pcall(lib.t, uiLanguage, key, fallback)
+		if ok and type(text) == "string" and text ~= "" then
+			return text
+		end
+	end
+	return fallback or key
+end
+
+local function registerLocale(element, key)
+	if element and key then
+		table.insert(localeBindings, { element = element, key = key })
+	end
+end
+
+local function applyLocaleBindings()
+	for _, item in ipairs(localeBindings) do
+		if item.element and item.element.Parent then
+			item.element.Text = L(item.key, item.element.Text)
+		end
+	end
+end
+
+local function getTabDefs()
+	return {
+		{ name = L("tab_teleport", "Телепорт"), title = L("tab_teleport", "Телепорт"), subtitle = L("tab_teleport_sub", "Контрабанда · точки") },
+		{ name = L("tab_features", "Функции"), title = L("tab_features", "Функции"), subtitle = L("tab_features_sub", "Noclip · ESP · машина") },
+		{ name = L("tab_settings", "Настройки"), title = L("tab_settings", "Настройки"), subtitle = L("tab_settings_sub", "ТП ног · буст") },
+		{ name = L("tab_credits", "Кредиты"), title = L("tab_credits", "Кредиты"), subtitle = L("tab_credits_sub", "О проекте") },
+	}
+end
+
+local function readUiLanguageFromConfig()
+	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+		return "ru"
+	end
+	local okFile, exists = pcall(isfile, CONFIG_FILE)
+	if not okFile or not exists then
+		return "ru"
+	end
+	local okRead, raw = pcall(readfile, CONFIG_FILE)
+	if not okRead or type(raw) ~= "string" or raw == "" then
+		return "ru"
+	end
+	local okJson, data = pcall(function()
+		return game:GetService("HttpService"):JSONDecode(raw)
+	end)
+	if not okJson or type(data) ~= "table" then
+		return "ru"
+	end
+	return normalizeLanguage(data.uiLanguage)
+end
+
+local function refreshCreditsText()
+	if aboutLabel and aboutLabel.Parent then
+		aboutLabel.Text = L("credits_about", "MAXI HUB | El Paso Border Roleplay")
+			.. "\nPlaceId: 14502598369\n"
+			.. BUILD
+	end
+	if tgButton and tgButton.Parent then
+		local copiedText = L("tg_copied", "Скопировано!")
+		if tgButton.Text ~= copiedText then
+			tgButton.Text = L("tg_button", "Telegram канал")
+		end
+	end
+end
+
+local function applyUiLocale()
+	applyLocaleBindings()
+	refreshCreditsText()
+	if uiInstance then
+		if typeof(uiInstance.setLanguage) == "function" then
+			uiInstance.setLanguage(uiLanguage)
+		end
+		if typeof(uiInstance.setTitleHint) == "function" then
+			uiInstance.setTitleHint(L("title_hint", "RightShift — скрыть"))
+		end
+		if typeof(uiInstance.setHideHintText) == "function" then
+			uiInstance.setHideHintText(L("hide_hint", "RightShift — открыть меню"))
+		end
+		if typeof(uiInstance.refreshTabLabels) == "function" then
+			uiInstance.refreshTabLabels(getTabDefs())
+		end
+	end
+end
+
+local function fullUnload()
+	if EpbrLogic and EpbrLogic.stop then
+		pcall(EpbrLogic.stop)
+	end
+	hubBootstrapped = false
+	local pg = player and player:FindFirstChild("PlayerGui")
+	if pg then
+		local old = pg:FindFirstChild("MaxiHubEPBR")
+		if old then
+			pcall(function() old:Destroy() end)
+		end
+	end
+	uiRoot = nil
+	uiInstance = nil
+	aboutLabel = nil
+	tgButton = nil
+	localeBindings = {}
+end
+
+local prevStop = genv.EPBR_Stop
+genv.EPBR_Stop = fullUnload
+
+if typeof(prevStop) == "function" then
+	pcall(prevStop)
+end
+
+local function setUiLanguage(lang, opts)
+	opts = opts or {}
+	uiLanguage = normalizeLanguage(lang)
+	if EpbrLogic and typeof(EpbrLogic.setUiLanguage) == "function" and not opts.skipLogic then
+		pcall(EpbrLogic.setUiLanguage, uiLanguage)
+	end
+	applyUiLocale()
+end
+
+local function bootstrapEpbrHub()
+	if hubBootstrapped then return end
+	hubBootstrapped = true
+
+	if game.PlaceId ~= 0 and game.PlaceId ~= PLACE_ID then
+		warn("[EPBR] PlaceId " .. tostring(game.PlaceId) .. " (expected " .. PLACE_ID .. ")")
+	end
+
+	uiLanguage = readUiLanguageFromConfig()
+	localeBindings = {}
+	local tabDefs = getTabDefs()
+
+	local uiOpts = {
+		player = player,
+		playerGui = playerGui,
+		genv = genv,
+		guiName = "MaxiHubEPBR",
+		title = "MAXI HUB",
+		version = "EPBR " .. BUILD,
+		defaultPosition = DEFAULT_UI_POS,
+		titleHint = L("title_hint", "RightShift — скрыть"),
+		hideHintText = L("hide_hint", "RightShift — открыть меню"),
+		tabs = tabDefs,
+		language = uiLanguage,
+		onLanguageChange = function(lang)
+			setUiLanguage(lang)
+		end,
+		registerLocale = registerLocale,
+		onDestroy = fullUnload,
+	}
+
+	local ui
+	if typeof(MaxiHubUI) == "table" and typeof(MaxiHubUI.create) == "function" then
+		ui = MaxiHubUI.create(uiOpts)
+	else
+		error("[EPBR] maxi-hub-ui: expected MaxiHubUI.create")
+	end
+
+	uiInstance = ui
+	uiRoot = ui.uiRoot
+	local COLORS = ui.COLORS
+	local contentPages = ui.contentPages
+	local addCorner = ui.addCorner
+	local makeScrollPage = ui.makeScrollPage
+	local makeListWrap = ui.makeListWrap
+
+	EpbrLogic = EpbrLogicModule
+	EpbrLogic.mount({
+		player = player,
+		genv = genv,
+		guiName = "MaxiHubEPBR",
+		pages = {
+			main = contentPages[1],
+			features = contentPages[2],
+			settings = contentPages[3],
+		},
+		ui = {
+			COLORS = COLORS,
+			addCorner = addCorner,
+			makeFlowPanel = ui.makeFlowPanel,
+			makeFlowToggle = ui.makeFlowToggle,
+			makeFlowSlider = ui.makeFlowSlider,
+			makeStatRow = ui.makeStatRow,
+			makeToggle = ui.makeToggle,
+			makeSlider = ui.makeSlider,
+			makeScrollPage = makeScrollPage,
+			makeListWrap = makeListWrap,
+			makeSectionTitle = ui.makeSectionTitle,
+		},
+		translate = L,
+		registerLocale = registerLocale,
+	})
+
+	local credScroll = makeScrollPage(contentPages[4])
+	local credWrap = makeListWrap(credScroll)
+
+	aboutLabel = Instance.new("TextLabel")
+	aboutLabel.Size = UDim2.new(1, 0, 0, 88)
+	aboutLabel.BackgroundColor3 = COLORS.panel
+	aboutLabel.BorderSizePixel = 0
+	aboutLabel.Font = Enum.Font.Gotham
+	aboutLabel.TextSize = 12
+	aboutLabel.TextColor3 = COLORS.text
+	aboutLabel.TextWrapped = true
+	aboutLabel.Text = ""
+	aboutLabel.LayoutOrder = 1
+	aboutLabel.Parent = credWrap
+	addCorner(aboutLabel, 8)
+
+	tgButton = Instance.new("TextButton")
+	tgButton.Size = UDim2.new(1, 0, 0, 40)
+	tgButton.BackgroundColor3 = COLORS.accent
+	tgButton.BorderSizePixel = 0
+	tgButton.Font = Enum.Font.GothamBold
+	tgButton.TextSize = 13
+	tgButton.TextColor3 = COLORS.bg
+	tgButton.Text = L("tg_button", "Telegram канал")
+	tgButton.AutoButtonColor = false
+	tgButton.LayoutOrder = 2
+	tgButton.Parent = credWrap
+	addCorner(tgButton, 8)
+
+	tgButton.MouseButton1Click:Connect(function()
+		pcall(function() setclipboard(TELEGRAM_LINK) end)
+		tgButton.Text = L("tg_copied", "Скопировано!")
+		task.delay(1.5, function()
+			if tgButton and tgButton.Parent then
+				tgButton.Text = L("tg_button", "Telegram канал")
+			end
+		end)
+	end)
+
+	if EpbrLogic and typeof(EpbrLogic.getUiLanguage) == "function" then
+		uiLanguage = normalizeLanguage(EpbrLogic.getUiLanguage())
+	end
+	setUiLanguage(uiLanguage, { skipLogic = true })
+
+	ui.onInputBegan(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.KeyCode == Enum.KeyCode.RightShift and uiRoot then
+			uiRoot.Visible = not uiRoot.Visible
+		end
+	end)
+
+	ui.finalize()
+end
+
+local function launchEpbrHub()
+	if not ensurePlayer() then
+		warn("[EPBR] PlayerGui not found")
+		return
+	end
+
+	local ok, err = pcall(bootstrapEpbrHub)
+	if not ok then
+		hubBootstrapped = false
+		warn("[EPBR] Startup error:", err)
+		if debug and debug.traceback then
+			warn(debug.traceback(err, 2))
+		end
+	end
+end
+
+task.defer(function()
+	local ok, err = pcall(launchEpbrHub)
+	if not ok then
+		warn("[EPBR] Fatal error:", err)
+	end
+end)
