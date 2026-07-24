@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.9"
+local BUILD = "v0.15.0"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -119,6 +119,11 @@ local Config = {
 	forcePromptHoldZero = true,
 	autoSmuggle = false,
 	autoWork = false,
+	userDiscordWebhook = "",
+	discordReportsEnabled = true,
+	discordReportMinutes = 10,
+	discordLogOnSell = true,
+	discordLogOnStop = true,
 	waypoints = {
 		pickup = nil,
 		dropoff = nil,
@@ -130,6 +135,13 @@ local Config = {
 }
 
 local State = { status = "готов", phase = "idle" }
+
+local SmuggleSession = {
+	smugglingActive = false,
+	startedAt = 0,
+	cyclesCompleted = 0,
+	sellsCompleted = 0,
+}
 
 local ctxRef = {}
 local statusValueLabel
@@ -476,6 +488,12 @@ local function loadConfig()
 	if type(Config.stepSize) ~= "number" then Config.stepSize = 0.20 end
 	if type(Config.stepsPerFrame) ~= "number" then Config.stepsPerFrame = 10 end
 	Config.stepsPerFrame = math.clamp(math.floor(Config.stepsPerFrame + 0.5), 1, 12)
+	if type(Config.userDiscordWebhook) ~= "string" then Config.userDiscordWebhook = "" end
+	if type(Config.discordReportsEnabled) ~= "boolean" then Config.discordReportsEnabled = true end
+	if type(Config.discordLogOnSell) ~= "boolean" then Config.discordLogOnSell = true end
+	if type(Config.discordLogOnStop) ~= "boolean" then Config.discordLogOnStop = true end
+	if type(Config.discordReportMinutes) ~= "number" then Config.discordReportMinutes = 10 end
+	Config.discordReportMinutes = math.clamp(math.floor(Config.discordReportMinutes + 0.5), 1, 120)
 end
 
 local function refreshWaypointLabels()
@@ -2598,6 +2616,7 @@ local function runCargoPickupSequenceFoot()
 
 	setPhase("idle")
 	setStatus("цикл завершён")
+	discordApi.onCycleComplete()
 	return true
 end
 
@@ -2614,6 +2633,7 @@ local function runAutoSmuggleLoop()
 	applyPromptHoldZeroSweep()
 	stopThread("autoSmuggle")
 	startThread("autoSmuggle", function()
+		discordApi.onSmuggleStart()
 		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
 			Runtime.armPromptHoldZeroWindow(2.0)
 			applyFirstPersonCamera()
@@ -2632,6 +2652,7 @@ local function runAutoSmuggleLoop()
 		restoreSmugglePromptSettings()
 		setAutoSmuggleFirstPerson(false)
 		setPhase("idle")
+		discordApi.onSmuggleStop()
 	end)
 end
 
@@ -2760,6 +2781,69 @@ local function initEspApi()
 	if type(api.clear) == "function" then espApi.clear = api.clear end
 	if type(api.refresh) == "function" then espApi.refresh = api.refresh end
 	if type(api.bind) == "function" then espApi.bind = api.bind end
+	return true
+end
+
+local discordApi = {
+	getWebhook = function() return "" end,
+	setUserWebhook = function() end,
+	sendTest = function() return false, "Discord API недоступен" end,
+	logSession = function() end,
+	onCycleComplete = function() end,
+	onSmuggleStart = function() end,
+	onSmuggleStop = function() end,
+	maybePeriodicReport = function() end,
+}
+
+local function getDiscordSessionFields()
+	local secs = 0
+	if SmuggleSession.startedAt and SmuggleSession.startedAt > 0 then
+		secs = math.max(0, math.floor(os.clock() - SmuggleSession.startedAt))
+	end
+	local mins = math.floor(secs / 60)
+	local secRem = secs % 60
+	local timeStr
+	if mins > 0 then
+		timeStr = string.format("%dм %dс", mins, secRem)
+	else
+		timeStr = secs .. "с"
+	end
+	local cargoText = table.concat(getSelectedCargoItems(), ", ")
+	if cargoText == "" then
+		cargoText = "—"
+	end
+	return {
+		{ name = "Циклов", value = tostring(SmuggleSession.cyclesCompleted or 0), inline = true },
+		{ name = "Продаж", value = tostring(SmuggleSession.sellsCompleted or 0), inline = true },
+		{ name = "Время", value = timeStr, inline = true },
+		{ name = "Фаза", value = tostring(State.phase or "idle"), inline = true },
+		{ name = "Статус", value = localizeStatusText(State.status or ""), inline = true },
+		{ name = "Груз", value = cargoText, inline = false },
+	}
+end
+
+local function initDiscordApi()
+	local factory = loadOptionalModule("modules/discord-log.lua")
+	if type(factory) ~= "function" then
+		return false
+	end
+	local ok, api = pcall(factory, {
+		HttpService = game:GetService("HttpService"),
+		Config = Config,
+		saveConfig = saveConfig,
+		getLocalPlayer = getLocalPlayer,
+		getSessionFields = getDiscordSessionFields,
+		Session = SmuggleSession,
+		BUILD = BUILD,
+	})
+	if not ok or type(api) ~= "table" then
+		return false
+	end
+	for key, fn in pairs(api) do
+		if type(fn) == "function" then
+			discordApi[key] = fn
+		end
+	end
 	return true
 end
 
@@ -2958,9 +3042,10 @@ local function mountMain(ctx)
 					setVehicleFlingEnabled(false)
 				end
 				runAutoSmuggleLoop()
-			else
-				stopThread("autoSmuggle")
-				forceRestoreAllNoclip()
+		else
+			stopThread("autoSmuggle")
+			discordApi.onSmuggleStop()
+			forceRestoreAllNoclip()
 				restoreSmugglePromptSettings()
 				setAutoSmuggleFirstPerson(false)
 				setPhase("idle")
@@ -3436,6 +3521,25 @@ local function mountSettings(ctx)
 	}, ctx)
 end
 
+local function mountDiscord(ctx)
+	local extMount = loadOptionalModule("modules/discord-tab.lua")
+	if type(extMount) ~= "function" then
+		return
+	end
+
+	local ok, err = pcall(extMount, {
+		Config = Config,
+		saveConfig = saveConfig,
+		canUseConfigFile = typeof(writefile) == "function" and typeof(isfile) == "function",
+		discordApi = discordApi,
+		translate = ctx.translate or function(key, fallback) return fallback or key end,
+		registerLocale = ctx.registerLocale,
+	}, ctx)
+	if not ok then
+		warn("[EPBR] mountDiscord failed: " .. tostring(err))
+	end
+end
+
 function M.getUiLanguage()
 	return normalizeLang(Config.uiLanguage)
 end
@@ -3491,6 +3595,7 @@ function M.mount(ctx)
 	ctxRef.player = ctx.player
 	loadConfig()
 	initEspApi()
+	initDiscordApi()
 	local startupChar = getCharacter()
 	if startupChar then restoreCharacterCollision(startupChar) end
 	if Config.gatesRemoved then setGatesRemoved(true) end
@@ -3546,6 +3651,7 @@ function M.mount(ctx)
 	mountMain(ctx)
 	mountFeatures(ctx)
 	mountSettings(ctx)
+	mountDiscord(ctx)
 	applyPromptHoldZeroSweep()
 	runPromptHoldZeroLoop()
 
@@ -3582,6 +3688,9 @@ function M.mount(ctx)
 				end
 				applyVehicleBoostAssist(vehicle)
 			end
+		end
+		if Config.autoSmuggle then
+			discordApi.maybePeriodicReport()
 		end
 	end))
 

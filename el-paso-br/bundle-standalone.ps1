@@ -31,7 +31,9 @@ $embeddedModules = @(
     "modules\esp.lua",
     "modules\features-tab.lua",
     "modules\settings-tab.lua",
-    "modules\locale.lua"
+    "modules\locale.lua",
+    "modules\discord-log.lua",
+    "modules\discord-tab.lua"
 )
 
 $embeddedLines = New-Object System.Collections.Generic.List[string]
@@ -61,7 +63,7 @@ $header = @'
 
 local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
 local PLACE_ID = 14502598369
-local BUILD = "v0.14.9"
+local BUILD = "v0.15.0"
 
 local Players = game:GetService("Players")
 local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
