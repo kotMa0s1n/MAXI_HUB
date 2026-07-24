@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.1"
+local BUILD = "v0.14.2"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -119,8 +119,6 @@ local phaseValueLabel
 local pickupValueLabel
 local dropoffValueLabel
 local footZoneValueLabel
-local carPickupValueLabel
-local carDropoffValueLabel
 local cargoValueLabel
 
 local Players = game:GetService("Players")
@@ -128,16 +126,6 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local moduleCache = {}
-local translateFn = function(_key, fallback) return fallback or _key end
-local localeRefreshers = {}
-
-local function tr(key, fallback)
-	local ok, value = pcall(translateFn, key, fallback)
-	if ok and type(value) == "string" and value ~= "" then
-		return value
-	end
-	return fallback or key
-end
 
 local function getModulePaths(fileName)
 	local paths = {}
@@ -370,7 +358,6 @@ local function loadConfig()
 	if Config.waypoints.carDropoff == nil then Config.waypoints.carDropoff = nil end
 	Config.cargoItems = sanitizeCargoSelection(Config.cargoItems)
 	Config.cargoItem = Config.cargoItems[1]
-	Config.uiLanguage = (type(Config.uiLanguage) == "string" and Config.uiLanguage:lower() == "en") and "en" or "ru"
 	if Config.footTpMode ~= "step" and Config.footTpMode ~= "elevated" then
 		Config.footTpMode = "elevated"
 	end
@@ -422,7 +409,7 @@ local function loadConfig()
 end
 
 local function refreshWaypointLabels()
-	local notSetText = tr("value_not_set", "не задан")
+	local notSetText = "не задан"
 	if pickupValueLabel and pickupValueLabel.Parent then
 		local wp = Config.waypoints.pickup
 		pickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
@@ -434,14 +421,6 @@ local function refreshWaypointLabels()
 	if footZoneValueLabel and footZoneValueLabel.Parent then
 		local wp = Config.waypoints.footZone
 		footZoneValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
-	end
-	if carPickupValueLabel and carPickupValueLabel.Parent then
-		local wp = Config.waypoints.carPickup
-		carPickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
-	end
-	if carDropoffValueLabel and carDropoffValueLabel.Parent then
-		local wp = Config.waypoints.carDropoff
-		carDropoffValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
 	end
 	if cargoValueLabel and cargoValueLabel.Parent then
 		local cargoText = table.concat(getSelectedCargoItems(), ", ")
@@ -2333,50 +2312,6 @@ local function teleportToPosition(pos, opts)
 	return smartTeleportTo(target, opts)
 end
 
-local function saveWaypoint(key)
-	local vehicle, seat = getVehicle()
-	local part = seat or getRootPart()
-	if not part then notify("нет позиции") return false end
-	Config.waypoints[key] = vecToTable(part.Position)
-	if key == "pickup" and vehicle then trackedVehicle = vehicle end
-	saveConfig()
-	refreshWaypointLabels()
-	notify(key .. " сохранён")
-	setStatus(key .. " сохранён")
-	return true
-end
-
-local function saveFootWaypoint(key)
-	local root = getRootPart()
-	if not root then return false end
-	Config.waypoints[key] = vecToTable(root.Position)
-	saveConfig()
-	refreshWaypointLabels()
-	notify(key .. " (ноги) сохранён")
-	return true
-end
-
-local function saveVehicleWaypoint(key, label)
-	local vehicle, seat = getVehicle()
-	if not vehicle or not seat then
-		setStatus("сядь в машину")
-		return false
-	end
-	Config.waypoints[key] = vecToTable(seat.Position)
-	Config.waypoints.carSeat = vecToTable(seat.Position)
-	trackedVehicle = vehicle
-	saveConfig()
-	setStatus((label or key) .. " сохранён")
-	return true
-end
-
-local function getCarReturnPosition()
-	local vehicle = findMyVehicle()
-	if not vehicle then return nil end
-	local cf = vehicle:GetPivot()
-	return cf.Position + cf.RightVector * -10
-end
-
 local function getSmuggleWaypoints()
 	local pickup = tableToVec3(Config.waypoints and Config.waypoints.pickup)
 	local dropoff = tableToVec3(Config.waypoints and Config.waypoints.dropoff)
@@ -2388,18 +2323,6 @@ local function getSmuggleWaypoints()
 	return pickup, dropoff, footZone
 end
 
-local function getSmuggleCarWaypoints(showError)
-	local carPickup = tableToVec3(Config.waypoints and Config.waypoints.carPickup)
-	local carDropoff = tableToVec3(Config.waypoints and Config.waypoints.carDropoff)
-	if not carPickup or not carDropoff then
-		if showError then
-			setStatus("задай CAR PICKUP / CAR DROPOFF")
-		end
-		return nil, nil
-	end
-	return carPickup, carDropoff
-end
-
 local function teleportFootForCycle(pos, phaseName, footMode)
 	if isActionCancelled() then return false end
 	setPhase(phaseName or "move")
@@ -2408,25 +2331,6 @@ local function teleportFootForCycle(pos, phaseName, footMode)
 		routeNoclip = true,
 		footMode = footMode or "elevated",
 	})
-end
-
-local function returnToVehicleAndSeat(vehicle, phaseName)
-	local seat = getDriveSeatFromVehicle(vehicle)
-	if not seat then
-		setStatus("нет DriveSeat")
-		return false
-	end
-	if not teleportFootForCycle(seat.Position, phaseName or "to-car", "elevated") then
-		return false
-	end
-	setVehicleFrozenState(vehicle, false)
-	if tryEnterVehicleSeat(vehicle, seat, 2.8) then
-		return true
-	end
-	setVehicleFrozenState(vehicle, true)
-	if not waitInterruptible(0.08) then return false end
-	setVehicleFrozenState(vehicle, false)
-	return tryEnterVehicleSeat(vehicle, seat, 2.4)
 end
 
 local function runCargoPickupSequenceFoot()
@@ -2516,151 +2420,6 @@ local function runCargoPickupSequenceFoot()
 
 	setPhase("idle")
 	setStatus("цикл завершён")
-	return true
-end
-
-local function runCargoPickupSequenceVehicle()
-	if emergencyStopRequested then
-		setStatus("остановлено")
-		return false
-	end
-
-	local pickup, dropoff, footZone = getSmuggleWaypoints()
-	if not pickup or not dropoff or not footZone then
-		return false
-	end
-	local carPickup, carDropoff = getSmuggleCarWaypoints(true)
-	if not carPickup or not carDropoff then
-		return false
-	end
-
-	local vehicle, seat = getVehicle()
-	if not vehicle then
-		setStatus("сядь в машину для авто-цикла")
-		return false
-	end
-	seat = seat or getDriveSeatFromVehicle(vehicle)
-	if not seat then
-		setStatus("нет DriveSeat")
-		return false
-	end
-	trackedVehicle = vehicle
-
-	local function failWithUnfreeze(statusText)
-		if statusText then setStatus(statusText) end
-		setVehicleFrozenState(vehicle, false)
-		return false
-	end
-
-	setPhase("car-pickup")
-	if not vehicleInstantTeleportToPos(vehicle, carPickup, true) then
-		return failWithUnfreeze("не смог тп машину")
-	end
-	setVehicleFrozenState(vehicle, true)
-	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-	if not forceExitVehicleNow() then
-		return failWithUnfreeze("не вышел из машины")
-	end
-	setVehicleFrozenState(vehicle, true)
-
-	if not teleportFootForCycle(pickup, "to-pickup", "elevated") then
-		return failWithUnfreeze("не дошёл до pickup")
-	end
-	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-
-	local selectedItems = getSelectedCargoItems()
-	if #selectedItems == 0 then
-		return failWithUnfreeze("грузы не выбраны")
-	end
-
-	local expectedRemovedByItem = {}
-	for idx, itemName in ipairs(selectedItems) do
-		setPhase(string.format("find-item %d/%d", idx, #selectedItems))
-		local rootNow = getRootPart()
-		local nearRef = rootNow and rootNow.Position or pickup
-		local _, cargoPos = findNearestSmugglePurchasePrompt(itemName, nearRef)
-		if not cargoPos then
-			return failWithUnfreeze("нет предмета: " .. tostring(itemName))
-		end
-		if not teleportFootForCycle(cargoPos, string.format("to-item %d/%d", idx, #selectedItems), "step") then
-			return failWithUnfreeze("не дошёл до предмета")
-		end
-		if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-
-		setPhase(string.format("buy-item %d/%d", idx, #selectedItems))
-		local buyOk, buyMeta = buySmuggleItemTimes(itemName, cargoPos, SMUGGLE_BUY_COUNT_PER_ITEM)
-		if not buyOk then
-			return failWithUnfreeze("покупка не удалась")
-		end
-		local boughtNow = math.max(1, math.floor((buyMeta and buyMeta.boughtCount) or 1))
-		expectedRemovedByItem[itemName] = (expectedRemovedByItem[itemName] or 0) + boughtNow
-		if not waitInterruptible(0.1) then return failWithUnfreeze("стоп") end
-	end
-
-	if not returnToVehicleAndSeat(vehicle, "к машине (pickup)") then
-		return failWithUnfreeze("не смог сесть в машину")
-	end
-	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-
-	setPhase("car-dropoff")
-	if not vehicleInstantTeleportToPos(vehicle, carDropoff, false) then
-		return failWithUnfreeze("не смог тп машину")
-	end
-	setVehicleFrozenState(vehicle, true)
-	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-	if not forceExitVehicleNow() then
-		return failWithUnfreeze("не вышел из машины")
-	end
-	setVehicleFrozenState(vehicle, true)
-
-	if not teleportFootForCycle(dropoff, "to-dropoff", "elevated") then
-		return failWithUnfreeze("не дошёл до dropoff")
-	end
-	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-
-	setPhase("sell-smuggle")
-	local sellPrompt, sellPos = findNearestSellPrompt(dropoff, 90)
-	if not sellPrompt then
-		return failWithUnfreeze("нет Sell All Smuggle")
-	end
-	local root = getRootPart()
-	if sellPos and root and (root.Position - sellPos).Magnitude > 5 then
-		if not teleportFootForCycle(sellPos, "to-sell-prompt", "step") then
-			return failWithUnfreeze("не дошёл до сдачи")
-		end
-	end
-	if not sellSmuggleWithVerification(sellPrompt, sellPos, selectedItems, expectedRemovedByItem) then
-		return failWithUnfreeze("сдача не подтверждена")
-	end
-	if not waitInterruptible(0.1) then return failWithUnfreeze("стоп") end
-
-	if not teleportFootForCycle(footZone, "to-foot", "elevated") then
-		return failWithUnfreeze("не дошёл до foot")
-	end
-	if not waitInterruptible(0.08) then return failWithUnfreeze("стоп") end
-
-	setPhase("laundry")
-	local laundryPrompt, laundryPos = findNearestPromptByText("laundry dirty money", footZone, 90)
-	if not laundryPrompt then
-		return failWithUnfreeze("нет Laundry Dirty Money")
-	end
-	root = getRootPart()
-	if laundryPos and root and (root.Position - laundryPos).Magnitude > 5 then
-		if not teleportFootForCycle(laundryPos, "to-laundry-prompt", "step") then
-			return failWithUnfreeze("не дошёл до стирки")
-		end
-	end
-	if not activateBuyPromptRobust(laundryPrompt) then
-		return failWithUnfreeze("laundry fail")
-	end
-	if not waitInterruptible(0.12) then return failWithUnfreeze("стоп") end
-
-	if not returnToVehicleAndSeat(vehicle, "к машине (dropoff)") then
-		return failWithUnfreeze("не смог сесть в машину")
-	end
-
-	setPhase("idle")
-	setStatus("цикл завершён (машина)")
 	return true
 end
 
@@ -2794,25 +2553,6 @@ local function toggleGates()
 		return
 	end
 	setGatesRemoved(true)
-end
-
-local function teleportToMyCar()
-	local vehicle, seat = findMyVehicle()
-	if not vehicle then
-		notify("машина не найдена")
-		return false
-	end
-	trackedVehicle = vehicle
-	local pos = getCarReturnPosition() or (seat and seat.Position) or vehicle:GetPivot().Position
-	if getVehicle() then
-		return smartTeleportTo(pos, {
-			forceMode = "vehicle",
-			routeNoclip = true,
-			vehicleAirStep = true,
-			skipVehicleStabilize = true,
-		})
-	end
-	return smartTeleportTo(pos, { forceMode = "foot", routeNoclip = false })
 end
 
 -- ESP (module)
@@ -3122,13 +2862,8 @@ local function mountFeatures(ctx)
 			local removed = setGatesRemoved(true)
 			return removed or Config.gatesRemoved
 		end,
-		translate = ctx.translate or tr,
+		translate = ctx.translate or function(key, fallback) return fallback or key end,
 		registerLocale = ctx.registerLocale,
-		onLocaleChanged = function(cb)
-			if type(cb) == "function" then
-				table.insert(localeRefreshers, cb)
-			end
-		end,
 	}, ctx)
 end
 
@@ -3223,32 +2958,9 @@ local function mountSettings(ctx)
 			vehicleFlingUltraMult = Config.vehicleFlingUltraMult or 2.0,
 		},
 		onSet = onSet,
-		translate = ctx.translate or tr,
+		translate = ctx.translate or function(key, fallback) return fallback or key end,
 		registerLocale = ctx.registerLocale,
-		onLocaleChanged = function(cb)
-			if type(cb) == "function" then
-				table.insert(localeRefreshers, cb)
-			end
-		end,
 	}, ctx)
-end
-
-function M.getUiLanguage()
-	return (type(Config.uiLanguage) == "string" and Config.uiLanguage:lower() == "en") and "en" or "ru"
-end
-
-function M.setUiLanguage(lang)
-	local normalized = (type(lang) == "string" and lang:lower() == "en") and "en" or "ru"
-	local changed = Config.uiLanguage ~= normalized
-	Config.uiLanguage = normalized
-	if changed then
-		saveConfig()
-	end
-	refreshWaypointLabels()
-	for _, cb in ipairs(localeRefreshers) do
-		pcall(cb, normalized)
-	end
-	return normalized
 end
 
 function M.stop()
@@ -3266,7 +2978,6 @@ function M.stop()
 	stopThread("autoWork")
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	table.clear(conns)
-	table.clear(localeRefreshers)
 	espApi.clear()
 	local vehicle = findMyVehicle()
 	if vehicle then
@@ -3286,9 +2997,6 @@ function M.mount(ctx)
 	mounted = true
 	clearEmergencyStop()
 	setAutoSmuggleFirstPerson(false)
-	translateFn = type(ctx.translate) == "function" and ctx.translate or function(key, fallback)
-		return fallback or key
-	end
 	ctxRef.player = ctx.player
 	loadConfig()
 	initEspApi()
