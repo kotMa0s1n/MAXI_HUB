@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.4"
+local BUILD = "v0.14.5"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -24,18 +24,20 @@ local SMUGGLER_KEYWORDS = {
 	"smuggl", "contraband", "illegal", "cartel", "runner", "dealer", "traffick", "contrabando",
 }
 local SMUGGLE_BUY_COUNT_PER_ITEM = 3
-local PROMPT_HOLD_ZERO_INTERVAL_SECONDS = 1.0
-local PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS = 4.0
-local BOOST_RETUNE_INTERVAL = 0.35
-local NOCLIP_UPDATE_INTERVAL_IDLE = 0.16
-local NOCLIP_UPDATE_INTERVAL_ROUTE = 0.07
-local ESP_REFRESH_INTERVAL = 0.14
-local FIRST_PERSON_REFRESH_INTERVAL = 0.08
-local ANTICRASH_FRAME_SPIKE_SECONDS = 0.9
-local ANTICRASH_STRIKES_TO_STOP = 3
-local ANTICRASH_COOLDOWN_SECONDS = 25
-local SELL_CONFIRM_TIMEOUT_FAST = 1.25
-local SELL_RETRY_DELAY_FAST = 0.05
+local PERF = {
+	promptHoldZeroInterval = 1.0,
+	promptHoldZeroActionWindow = 4.0,
+	boostRetuneInterval = 0.35,
+	noclipUpdateIntervalIdle = 0.16,
+	noclipUpdateIntervalRoute = 0.07,
+	espRefreshInterval = 0.14,
+	firstPersonRefreshInterval = 0.08,
+	antiCrashFrameSpike = 0.9,
+	antiCrashStrikesToStop = 3,
+	antiCrashCooldown = 25,
+	sellConfirmTimeoutFast = 1.25,
+	sellRetryDelayFast = 0.05,
+}
 
 local mounted = false
 local conns = {}
@@ -52,14 +54,16 @@ local firstPersonAutoActive = false
 local savedCameraState = nil
 local lastNoclipUpdateAt = 0
 local lastBoostRetuneAt = 0
-local lastEspRefreshAt = 0
-local lastFirstPersonApplyAt = 0
-local lastPromptHoldZeroPulseAt = 0
-local promptHoldZeroActiveUntil = 0
-local lastHeartbeatAt = 0
-local heartbeatSpikeStrikes = 0
-local lastAntiCrashAt = 0
-local visiblePrompts = {}
+local Runtime = {
+	lastEspRefreshAt = 0,
+	lastFirstPersonApplyAt = 0,
+	lastPromptHoldZeroPulseAt = 0,
+	promptHoldZeroActiveUntil = 0,
+	lastHeartbeatAt = 0,
+	heartbeatSpikeStrikes = 0,
+	lastAntiCrashAt = 0,
+	visiblePrompts = {},
+}
 local smartTeleportTo
 local getPartPosition
 local getPromptWorldPos
@@ -1145,9 +1149,9 @@ local function requestEmergencyStop(reason)
 	stopThread("vehicleFling")
 	stopThread("promptHoldZeroSweep")
 	stopThread("autoWork")
-	promptHoldZeroActiveUntil = 0
-	heartbeatSpikeStrikes = 0
-	table.clear(visiblePrompts)
+	Runtime.promptHoldZeroActiveUntil = 0
+	Runtime.heartbeatSpikeStrikes = 0
+	table.clear(Runtime.visiblePrompts)
 	setAutoSmuggleFirstPerson(false)
 	teleportBusy = false
 	forceRestoreAllNoclip()
@@ -1158,25 +1162,25 @@ local function requestEmergencyStop(reason)
 	notify("экстренная остановка")
 end
 
-local function maybeTriggerAntiCrash(now, dt)
+Runtime.maybeTriggerAntiCrash = function(now, dt)
 	local stressActive = Config.autoSmuggle or Config.vehicleFlingEnabled or teleportBusy
 	if not stressActive then
-		if heartbeatSpikeStrikes > 0 and dt <= 0.35 then
-			heartbeatSpikeStrikes = math.max(0, heartbeatSpikeStrikes - 1)
+		if Runtime.heartbeatSpikeStrikes > 0 and dt <= 0.35 then
+			Runtime.heartbeatSpikeStrikes = math.max(0, Runtime.heartbeatSpikeStrikes - 1)
 		end
 		return false
 	end
 
-	if dt >= ANTICRASH_FRAME_SPIKE_SECONDS then
-		heartbeatSpikeStrikes += 1
-	elseif heartbeatSpikeStrikes > 0 and dt <= 0.4 then
-		heartbeatSpikeStrikes -= 1
+	if dt >= PERF.antiCrashFrameSpike then
+		Runtime.heartbeatSpikeStrikes += 1
+	elseif Runtime.heartbeatSpikeStrikes > 0 and dt <= 0.4 then
+		Runtime.heartbeatSpikeStrikes -= 1
 	end
 
-	if heartbeatSpikeStrikes >= ANTICRASH_STRIKES_TO_STOP
-		and (now - lastAntiCrashAt) >= ANTICRASH_COOLDOWN_SECONDS then
-		lastAntiCrashAt = now
-		heartbeatSpikeStrikes = 0
+	if Runtime.heartbeatSpikeStrikes >= PERF.antiCrashStrikesToStop
+		and (now - Runtime.lastAntiCrashAt) >= PERF.antiCrashCooldown then
+		Runtime.lastAntiCrashAt = now
+		Runtime.heartbeatSpikeStrikes = 0
 		Config.forcePromptHoldZero = false
 		Config.espEnabled = false
 		requestEmergencyStop("anti-crash: пойман фриз, авто остановлен")
@@ -1551,35 +1555,35 @@ local function forcePromptHoldZero(prompt)
 	end)
 end
 
-local function trackVisiblePrompt(prompt, shouldKeep)
+Runtime.trackVisiblePrompt = function(prompt, shouldKeep)
 	if not prompt or not prompt:IsA("ProximityPrompt") then return end
 	if shouldKeep == false then
-		visiblePrompts[prompt] = nil
+		Runtime.visiblePrompts[prompt] = nil
 		return
 	end
-	visiblePrompts[prompt] = true
+	Runtime.visiblePrompts[prompt] = true
 end
 
-local function armPromptHoldZeroWindow(seconds)
+Runtime.armPromptHoldZeroWindow = function(seconds)
 	if not Config.forcePromptHoldZero then return end
-	local window = math.max(0.6, tonumber(seconds) or PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS)
+	local window = math.max(0.6, tonumber(seconds) or PERF.promptHoldZeroActionWindow)
 	local untilAt = os.clock() + window
-	if untilAt > promptHoldZeroActiveUntil then
-		promptHoldZeroActiveUntil = untilAt
+	if untilAt > Runtime.promptHoldZeroActiveUntil then
+		Runtime.promptHoldZeroActiveUntil = untilAt
 	end
 end
 
-local function pulsePromptHoldZeroVisible()
+Runtime.pulsePromptHoldZeroVisible = function()
 	if not Config.forcePromptHoldZero then return end
 	local now = os.clock()
-	if (now - lastPromptHoldZeroPulseAt) < PROMPT_HOLD_ZERO_INTERVAL_SECONDS then
+	if (now - Runtime.lastPromptHoldZeroPulseAt) < PERF.promptHoldZeroInterval then
 		return
 	end
-	lastPromptHoldZeroPulseAt = now
+	Runtime.lastPromptHoldZeroPulseAt = now
 	local applied = 0
-	for prompt in pairs(visiblePrompts) do
+	for prompt in pairs(Runtime.visiblePrompts) do
 		if not prompt or not prompt.Parent then
-			visiblePrompts[prompt] = nil
+			Runtime.visiblePrompts[prompt] = nil
 		else
 			forcePromptHoldZero(prompt)
 			applied += 1
@@ -1591,18 +1595,18 @@ local function pulsePromptHoldZeroVisible()
 end
 
 local function applyPromptHoldZeroSweep()
-	armPromptHoldZeroWindow(PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS)
-	pulsePromptHoldZeroVisible()
+	Runtime.armPromptHoldZeroWindow(PERF.promptHoldZeroActionWindow)
+	Runtime.pulsePromptHoldZeroVisible()
 end
 
 local function runPromptHoldZeroLoop()
 	stopThread("promptHoldZero")
 	startThread("promptHoldZero", function()
 		while mounted and threads.promptHoldZero do
-			if Config.forcePromptHoldZero and os.clock() <= promptHoldZeroActiveUntil then
-				pulsePromptHoldZeroVisible()
+			if Config.forcePromptHoldZero and os.clock() <= Runtime.promptHoldZeroActiveUntil then
+				Runtime.pulsePromptHoldZeroVisible()
 			end
-			if not waitInterruptible(PROMPT_HOLD_ZERO_INTERVAL_SECONDS) then
+			if not waitInterruptible(PERF.promptHoldZeroInterval) then
 				break
 			end
 		end
@@ -1611,9 +1615,9 @@ end
 
 local function activatePromptSmart(prompt, fallbackHold)
 	if not prompt or not prompt.Parent then return false end
-	trackVisiblePrompt(prompt, true)
-	armPromptHoldZeroWindow(2.5)
-	pulsePromptHoldZeroVisible()
+	Runtime.trackVisiblePrompt(prompt, true)
+	Runtime.armPromptHoldZeroWindow(2.5)
+	Runtime.pulsePromptHoldZeroVisible()
 	lookCameraDown()
 	local hold = tonumber(prompt.HoldDuration) or 0
 	if hold <= 0.05 then
@@ -1654,9 +1658,9 @@ local function findNearestPromptByText(query, nearPos, maxDistance)
 	local root = getRootPart()
 	local refPos = nearPos or (root and root.Position)
 
-	for prompt in pairs(visiblePrompts) do
+	for prompt in pairs(Runtime.visiblePrompts) do
 		if not prompt or not prompt.Parent then
-			visiblePrompts[prompt] = nil
+			Runtime.visiblePrompts[prompt] = nil
 		elseif prompt.Enabled and promptMatchesQuery(prompt, query) then
 			local pos = getPromptWorldPos(prompt)
 			if pos then
@@ -1870,9 +1874,9 @@ end
 
 local function activateBuyPromptRobust(prompt)
 	if not prompt or not prompt.Parent then return false end
-	trackVisiblePrompt(prompt, true)
-	armPromptHoldZeroWindow(3.0)
-	pulsePromptHoldZeroVisible()
+	Runtime.trackVisiblePrompt(prompt, true)
+	Runtime.armPromptHoldZeroWindow(3.0)
+	Runtime.pulsePromptHoldZeroVisible()
 	lookCameraDown()
 	if typeof(fireproximityprompt) == "function" then
 		pcall(function() fireproximityprompt(prompt, 0) end)
@@ -1891,9 +1895,9 @@ end
 
 local function activateSellPromptFast(prompt)
 	if not prompt or not prompt.Parent then return false end
-	trackVisiblePrompt(prompt, true)
-	armPromptHoldZeroWindow(2.5)
-	pulsePromptHoldZeroVisible()
+	Runtime.trackVisiblePrompt(prompt, true)
+	Runtime.armPromptHoldZeroWindow(2.5)
+	Runtime.pulsePromptHoldZeroVisible()
 	lookCameraDown()
 	pcall(function()
 		prompt.HoldDuration = 0
@@ -1921,7 +1925,7 @@ local function buySmuggleItemTimes(itemName, nearPos, times)
 
 		for attempt = 1, maxAttemptsPerItem do
 			if isActionCancelled() then return false, nil end
-			armPromptHoldZeroWindow(2.5)
+			Runtime.armPromptHoldZeroWindow(2.5)
 
 			local prompt, pos = findNearestSmugglePurchasePrompt(itemName, nearPos)
 			if not prompt then
@@ -1935,7 +1939,7 @@ local function buySmuggleItemTimes(itemName, nearPos, times)
 					return false, nil
 				end
 				if not waitInterruptible(0.14) then return false, nil end
-				pulsePromptHoldZeroVisible()
+				Runtime.pulsePromptHoldZeroVisible()
 			end
 
 			if pos then
@@ -2006,7 +2010,7 @@ local function computeSellRemovedProgress(itemNames, unitsBeforeByItem, expected
 end
 
 local function waitForSellConfirmation(itemNames, unitsBeforeByItem, briefcaseBefore, expectedRemovedByItem, timeout)
-	local deadline = os.clock() + math.max(0.12, timeout or SELL_CONFIRM_TIMEOUT_FAST)
+	local deadline = os.clock() + math.max(0.12, timeout or PERF.sellConfirmTimeoutFast)
 	local currentUnitsByItem = getBackpackUnitsByItems(itemNames)
 	local lastRemovedTotal = 0
 	local lastRemovedOk = false
@@ -2077,7 +2081,7 @@ local function sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expec
 			beforeUnitsByItem,
 			beforeBriefcase,
 			expectedRemovedByItem,
-			(attempt <= 2) and SELL_CONFIRM_TIMEOUT_FAST or 1.7
+			(attempt <= 2) and PERF.sellConfirmTimeoutFast or 1.7
 		)
 		if sold then
 			setStatus(string.format("продано: -%d, кейс:%d", removedTotal, briefcaseNow))
@@ -2089,7 +2093,7 @@ local function sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expec
 			return true
 		end
 
-		if not waitInterruptible(SELL_RETRY_DELAY_FAST) then return false end
+		if not waitInterruptible(PERF.sellRetryDelayFast) then return false end
 	end
 
 	setStatus("продажа не подтверждена")
@@ -2391,8 +2395,8 @@ local function teleportToWaypoint(key, extraOpts)
 
 	local ok = smartTeleportTo(pos, opts)
 	if ok then
-		armPromptHoldZeroWindow(6.0)
-		pulsePromptHoldZeroVisible()
+		Runtime.armPromptHoldZeroWindow(6.0)
+		Runtime.pulsePromptHoldZeroVisible()
 	end
 	if not ok then
 		notify("ТП → " .. string.upper(tostring(key)) .. " не удался")
@@ -2430,8 +2434,8 @@ local function teleportFootForCycle(pos, phaseName, footMode)
 		footMode = footMode or "elevated",
 	})
 	if ok then
-		armPromptHoldZeroWindow(4.0)
-		pulsePromptHoldZeroVisible()
+		Runtime.armPromptHoldZeroWindow(4.0)
+		Runtime.pulsePromptHoldZeroVisible()
 	end
 	return ok
 end
@@ -2540,7 +2544,7 @@ local function runAutoSmuggleLoop()
 	stopThread("autoSmuggle")
 	startThread("autoSmuggle", function()
 		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
-			armPromptHoldZeroWindow(2.0)
+			Runtime.armPromptHoldZeroWindow(2.0)
 			applyFirstPersonCamera()
 			local ok, cycleOk = pcall(runCargoPickupSequence)
 			if not ok then
@@ -3166,8 +3170,8 @@ local function mountFeatures(ctx)
 			if v then
 				applyPromptHoldZeroSweep()
 			else
-				promptHoldZeroActiveUntil = 0
-				table.clear(visiblePrompts)
+				Runtime.promptHoldZeroActiveUntil = 0
+				table.clear(Runtime.visiblePrompts)
 			end
 			saveConfig()
 		end,
@@ -3326,11 +3330,11 @@ function M.stop()
 	local char = getCharacter()
 	if char then restoreCharacterCollision(char) end
 	teleportBusy = false
-	promptHoldZeroActiveUntil = 0
-	lastPromptHoldZeroPulseAt = 0
-	heartbeatSpikeStrikes = 0
-	lastAntiCrashAt = 0
-	table.clear(visiblePrompts)
+	Runtime.promptHoldZeroActiveUntil = 0
+	Runtime.lastPromptHoldZeroPulseAt = 0
+	Runtime.heartbeatSpikeStrikes = 0
+	Runtime.lastAntiCrashAt = 0
+	table.clear(Runtime.visiblePrompts)
 	notify("выгружен")
 end
 
@@ -3345,14 +3349,14 @@ function M.mount(ctx)
 	local startupChar = getCharacter()
 	if startupChar then restoreCharacterCollision(startupChar) end
 	if Config.gatesRemoved then setGatesRemoved(true) end
-	table.clear(visiblePrompts)
-	promptHoldZeroActiveUntil = 0
-	lastPromptHoldZeroPulseAt = 0
-	lastEspRefreshAt = 0
-	lastFirstPersonApplyAt = 0
-	heartbeatSpikeStrikes = 0
-	lastAntiCrashAt = 0
-	lastHeartbeatAt = os.clock()
+	table.clear(Runtime.visiblePrompts)
+	Runtime.promptHoldZeroActiveUntil = 0
+	Runtime.lastPromptHoldZeroPulseAt = 0
+	Runtime.lastEspRefreshAt = 0
+	Runtime.lastFirstPersonApplyAt = 0
+	Runtime.heartbeatSpikeStrikes = 0
+	Runtime.lastAntiCrashAt = 0
+	Runtime.lastHeartbeatAt = os.clock()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		espApi.bind(player)
@@ -3361,14 +3365,14 @@ function M.mount(ctx)
 		espApi.bind(player)
 	end))
 	trackConn(ProximityPromptService.PromptShown:Connect(function(prompt)
-		trackVisiblePrompt(prompt, true)
+		Runtime.trackVisiblePrompt(prompt, true)
 		if Config.forcePromptHoldZero then
-			armPromptHoldZeroWindow(PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS)
+			Runtime.armPromptHoldZeroWindow(PERF.promptHoldZeroActionWindow)
 			forcePromptHoldZero(prompt)
 		end
 	end))
 	trackConn(ProximityPromptService.PromptHidden:Connect(function(prompt)
-		trackVisiblePrompt(prompt, false)
+		Runtime.trackVisiblePrompt(prompt, false)
 	end))
 
 	trackConn(UserInputService.InputBegan:Connect(function(input, processed)
@@ -3402,32 +3406,32 @@ function M.mount(ctx)
 
 	trackConn(RunService.Heartbeat:Connect(function()
 		local now = os.clock()
-		local dt = now - (lastHeartbeatAt > 0 and lastHeartbeatAt or now)
-		lastHeartbeatAt = now
-		if maybeTriggerAntiCrash(now, dt) then
+		local dt = now - (Runtime.lastHeartbeatAt > 0 and Runtime.lastHeartbeatAt or now)
+		Runtime.lastHeartbeatAt = now
+		if Runtime.maybeTriggerAntiCrash(now, dt) then
 			return
 		end
 		if firstPersonAutoActive then
-			if (now - lastFirstPersonApplyAt) >= FIRST_PERSON_REFRESH_INTERVAL then
+			if (now - Runtime.lastFirstPersonApplyAt) >= PERF.firstPersonRefreshInterval then
 				applyFirstPersonCamera()
-				lastFirstPersonApplyAt = now
+				Runtime.lastFirstPersonApplyAt = now
 			end
 		end
 		if Config.noclipFoot or Config.noclipVehicles or routeNoclipActive then
-			local interval = (routeNoclipActive or teleportBusy) and NOCLIP_UPDATE_INTERVAL_ROUTE or NOCLIP_UPDATE_INTERVAL_IDLE
+			local interval = (routeNoclipActive or teleportBusy) and PERF.noclipUpdateIntervalRoute or PERF.noclipUpdateIntervalIdle
 			if (now - lastNoclipUpdateAt) >= interval then
 				updateNoclip()
 				lastNoclipUpdateAt = now
 			end
 		end
-		if Config.espEnabled and (now - lastEspRefreshAt) >= ESP_REFRESH_INTERVAL then
+		if Config.espEnabled and (now - Runtime.lastEspRefreshAt) >= PERF.espRefreshInterval then
 			espApi.refresh()
-			lastEspRefreshAt = now
+			Runtime.lastEspRefreshAt = now
 		end
 		if Config.vehicleBoostEnabled then
 			local vehicle = getVehicle()
 			if vehicle then
-				if (now - lastBoostRetuneAt) >= BOOST_RETUNE_INTERVAL then
+				if (now - lastBoostRetuneAt) >= PERF.boostRetuneInterval then
 					applyVehicleDriveBoost(vehicle)
 					lastBoostRetuneAt = now
 				end
