@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.5"
+local BUILD = "v0.14.6"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -162,12 +162,28 @@ local function loadOptionalModule(fileName)
 	if moduleCache[fileName] ~= nil then
 		return moduleCache[fileName] or nil
 	end
-	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+	local loader = loadstring or load
+	if type(loader) ~= "function" then
 		moduleCache[fileName] = false
 		return nil
 	end
-	local loader = loadstring or load
-	if type(loader) ~= "function" then
+
+	local embedded = rawget(_G, "__EPBR_EMBEDDED")
+	if type(embedded) == "table" then
+		local src = embedded[fileName]
+		if type(src) == "string" and src ~= "" then
+			local chunk = loader(src, "@" .. fileName)
+			if chunk then
+				local okRun, mod = pcall(chunk)
+				if okRun and type(mod) == "function" then
+					moduleCache[fileName] = mod
+					return mod
+				end
+			end
+		end
+	end
+
+	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
 		moduleCache[fileName] = false
 		return nil
 	end
@@ -880,6 +896,12 @@ local function slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
 
 		local lin = Vector3.new(sx * linearPower, yKickBase + math.abs(bob) * yKickBob, sz * linearPower)
 		local ang = Vector3.new(tiltPower * bob, spinPower + bob * (spinPower * 0.55), -tiltPower * bob)
+		lin = clampVelocityVec(lin, math.min(linearPower, 220), 95)
+		ang = Vector3.new(
+			math.clamp(ang.X, -140, 140),
+			math.clamp(ang.Y, -220, 220),
+			math.clamp(ang.Z, -140, 140)
+		)
 		for _, part in ipairs(myVehicle:GetDescendants()) do
 			if part:IsA("BasePart") then
 				part.AssemblyLinearVelocity = lin
@@ -1002,6 +1024,16 @@ local function applyVehicleDriveBoost(vehicle)
 	return true
 end
 
+local function clampVelocityVec(vel, maxFlat, maxY)
+	maxFlat = math.max(40, tonumber(maxFlat) or 180)
+	maxY = math.max(20, tonumber(maxY) or 90)
+	local flat = Vector3.new(vel.X, 0, vel.Z)
+	if flat.Magnitude > maxFlat then
+		flat = flat.Unit * maxFlat
+	end
+	return Vector3.new(flat.X, math.clamp(vel.Y, -maxY, maxY), flat.Z)
+end
+
 local function getVehicleMotionPart(vehicle)
 	if not vehicle then return nil end
 	local body = vehicle:FindFirstChild("Body")
@@ -1097,7 +1129,11 @@ local function applyVehicleBoostAssist(vehicle)
 
 	local downforce = math.clamp((nextFlat.Magnitude / math.max(1, maxSpeed)) * 7.5, 0, 7.5)
 	local forcedY = math.max(vel.Y - (downforce * 0.22), -28)
-	part.AssemblyLinearVelocity = Vector3.new(nextFlat.X, forcedY, nextFlat.Z)
+	part.AssemblyLinearVelocity = clampVelocityVec(
+		Vector3.new(nextFlat.X, forcedY, nextFlat.Z),
+		maxSpeed + 35,
+		70
+	)
 
 	if math.abs(steer) > 0.02 and nextFlat.Magnitude > 8 then
 		local turnAssist = math.clamp(0.003 + ((nextFlat.Magnitude / math.max(1, maxSpeed)) * 0.02), 0.003, 0.03)
@@ -2725,14 +2761,41 @@ local function mountMain(ctx)
 		return host
 	end
 
-	local topHost = makeHost(1, 200)
-	local statusPanel = makeFlowPanel(topHost, L("panel_status", "Статус"), 206, 200, 0, 0, nil, "panel_status")
+	local PANEL_FULL = 416
+	local PANEL_HALF = 200
+	local PANEL_GAP = 16
+
+	local function makeSplitRow(parent, order, height)
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, height)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = order
+		row.Parent = parent
+		local lay = Instance.new("UIListLayout")
+		lay.FillDirection = Enum.FillDirection.Horizontal
+		lay.Padding = UDim.new(0, PANEL_GAP)
+		lay.SortOrder = Enum.SortOrder.LayoutOrder
+		lay.Parent = row
+		return row
+	end
+
+	local function makeHalfSlot(parent, order)
+		local slot = Instance.new("Frame")
+		slot.Size = UDim2.new(0, PANEL_HALF, 1, 0)
+		slot.BackgroundTransparency = 1
+		slot.LayoutOrder = order
+		slot.Parent = parent
+		return slot
+	end
+
+	local topRow = makeSplitRow(wrap, 1, 200)
+	local statusPanel = makeFlowPanel(makeHalfSlot(topRow, 1), L("panel_status", "Статус"), PANEL_HALF, 200, 0, 0, nil, "panel_status")
 	statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
 	phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
 	statusValueLabel.Text = State.status
 	phaseValueLabel.Text = State.phase
 
-	local points = makeFlowPanel(topHost, L("panel_points", "Точки"), 206, 200, 214, 0, 35, "panel_points")
+	local points = makeFlowPanel(makeHalfSlot(topRow, 2), L("panel_points", "Точки"), PANEL_HALF, 200, 0, 0, 35, "panel_points")
 	pickupValueLabel = makeStatRow(points, L("stat_pickup", "PICKUP"), 1, "stat_pickup")
 	dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
 	footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
@@ -2740,7 +2803,7 @@ local function mountMain(ctx)
 	refreshWaypointLabels()
 
 	local cargoHost = makeHost(2, 166)
-	local cargoPanel = makeFlowPanel(cargoHost, L("panel_cargo", "Выбор груза"), 420, 166, 0, 0, 40, "panel_cargo")
+	local cargoPanel = makeFlowPanel(cargoHost, L("panel_cargo", "Выбор груза"), PANEL_FULL, 166, 0, 0, 40, "panel_cargo")
 	local cargoRow = Instance.new("Frame")
 	cargoRow.Size = UDim2.new(1, 0, 0, 106)
 	cargoRow.BackgroundTransparency = 1
@@ -2748,7 +2811,7 @@ local function mountMain(ctx)
 	cargoRow.Parent = cargoPanel
 
 	local cargoGrid = Instance.new("UIGridLayout")
-	cargoGrid.CellSize = UDim2.new(0, 198, 0, 28)
+	cargoGrid.CellSize = UDim2.new(0, 205, 0, 28)
 	cargoGrid.CellPadding = UDim2.new(0, 6, 0, 6)
 	cargoGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	cargoGrid.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2778,7 +2841,7 @@ local function mountMain(ctx)
 	end
 	for i, name in ipairs(CARGO_ITEMS) do
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(0, 198, 0, 28)
+		btn.Size = UDim2.new(0, 205, 0, 28)
 		btn.BackgroundColor3 = COLORS.panel
 		btn.BorderSizePixel = 0
 		btn.Font = Enum.Font.Gotham
@@ -2814,7 +2877,7 @@ local function mountMain(ctx)
 	refreshCargoBtns()
 
 	local ctrlHost = makeHost(3, 178)
-	local ctrl = makeFlowPanel(ctrlHost, L("panel_cycle", "Телепорт и цикл"), 420, 178, 0, 0, 40, "panel_cycle")
+	local ctrl = makeFlowPanel(ctrlHost, L("panel_cycle", "Телепорт и цикл"), PANEL_FULL, 178, 0, 0, 40, "panel_cycle")
 	makeFlowToggle(ctrl, L("toggle_auto_smuggle", "Авто контрабанда (цикл)"), Config.autoSmuggle, function(v)
 		Config.autoSmuggle = v
 		if v then
@@ -2840,7 +2903,7 @@ local function mountMain(ctx)
 	btnRow.Parent = ctrl
 
 	local btnGrid = Instance.new("UIGridLayout")
-	btnGrid.CellSize = UDim2.new(0, 128, 0, 30)
+	btnGrid.CellSize = UDim2.new(0, 132, 0, 30)
 	btnGrid.CellPadding = UDim2.new(0, 8, 0, 6)
 	btnGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	btnGrid.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2848,7 +2911,7 @@ local function mountMain(ctx)
 
 	local function makeBtn(text, order, cb, localeKey)
 		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0, 128, 0, 30)
+		b.Size = UDim2.new(0, 132, 0, 30)
 		b.BackgroundColor3 = COLORS.accentSoft
 		b.BorderSizePixel = 0
 		b.Font = Enum.Font.GothamSemibold
@@ -2930,87 +2993,80 @@ local function mountFeaturesBuiltin(deps, ctx)
 		end
 	end
 
-	local function makeFeatureBox(parent, height, order)
-		local box = Instance.new("Frame")
-		box.Size = UDim2.new(1, 0, 0, height)
-		box.BackgroundTransparency = 1
-		box.LayoutOrder = order
-		box.Parent = parent
-		return box
+	local function makeActionBtn(parent, text, order, callback, localeKey)
+		local host = Instance.new("Frame")
+		host.Size = UDim2.new(1, 0, 0, 38)
+		host.BackgroundTransparency = 1
+		host.LayoutOrder = order
+		host.Parent = parent
+
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 0, 30)
+		btn.BackgroundColor3 = ui.COLORS.accentSoft
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.GothamSemibold
+		btn.TextSize = 10
+		btn.TextColor3 = ui.COLORS.text
+		btn.Text = text
+		btn.Parent = host
+		reg(btn, localeKey)
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 8)
+		corner.Parent = btn
+		btn.MouseButton1Click:Connect(function()
+			call(callback)
+		end)
+		return btn
 	end
 
 	local scroll = ui.makeScrollPage(page)
 	local wrap = ui.makeListWrap(scroll)
 	local makeSectionTitle = ui.makeSectionTitle
-	local makeToggle = ui.makeToggle
+	local makeFlowToggle = ui.makeFlowToggle
 
 	makeSectionTitle(wrap, tr("sec_main", "основное"), 1, "sec_main")
-	local mainBox = makeFeatureBox(wrap, 176, 2)
-	makeToggle(mainBox, 0, tr("toggle_esp_players", "ESP игроков"), values.espEnabled == true, function(v)
+	makeFlowToggle(wrap, tr("toggle_esp_players", "ESP игроков"), values.espEnabled == true, function(v)
 		call(deps.onToggleEsp, v)
-	end, nil, "toggle_esp_players")
-	makeToggle(mainBox, 44, tr("toggle_noclip_foot", "Постоянный noclip (ноги)"), values.noclipFoot == true, function(v)
+	end, 2, nil, "toggle_esp_players")
+	makeFlowToggle(wrap, tr("toggle_noclip_foot", "Постоянный noclip (ноги)"), values.noclipFoot == true, function(v)
 		call(deps.onToggleNoclipFoot, v)
-	end, nil, "toggle_noclip_foot")
-	makeToggle(mainBox, 88, tr("toggle_noclip_vehicle", "Постоянный noclip (машина)"), values.noclipVehicles == true, function(v)
+	end, 3, nil, "toggle_noclip_foot")
+	makeFlowToggle(wrap, tr("toggle_noclip_vehicle", "Постоянный noclip (машина)"), values.noclipVehicles == true, function(v)
 		call(deps.onToggleNoclipVehicle, v)
-	end, nil, "toggle_noclip_vehicle")
-	makeToggle(mainBox, 132, tr("toggle_prompt_zero", "Убрать задержку E (везде)"), values.forcePromptHoldZero ~= false, function(v)
+	end, 4, nil, "toggle_noclip_vehicle")
+	makeFlowToggle(wrap, tr("toggle_prompt_zero", "Убрать задержку E (везде)"), values.forcePromptHoldZero ~= false, function(v)
 		call(deps.onTogglePromptHoldZero, v)
-	end, nil, "toggle_prompt_zero")
+	end, 5, nil, "toggle_prompt_zero")
 
-	makeSectionTitle(wrap, tr("sec_vehicle_opt", "машина (опц.)"), 3, "sec_vehicle_opt")
-	local vehicleBox = makeFeatureBox(wrap, 176, 4)
-	makeToggle(vehicleBox, 0, tr("toggle_vehicle_boost", "Буст машины"), values.vehicleBoostEnabled == true, function(v)
+	makeSectionTitle(wrap, tr("sec_vehicle_opt", "машина (опц.)"), 6, "sec_vehicle_opt")
+	makeFlowToggle(wrap, tr("toggle_vehicle_boost", "Буст машины"), values.vehicleBoostEnabled == true, function(v)
 		call(deps.onToggleVehicleBoost, v)
-	end, nil, "toggle_vehicle_boost")
-	makeToggle(vehicleBox, 44, tr("toggle_vehicle_stop_s", "Мгновенный стоп на S"), values.vehicleStopOnS == true, function(v)
+	end, 7, nil, "toggle_vehicle_boost")
+	makeFlowToggle(wrap, tr("toggle_vehicle_stop_s", "Мгновенный стоп на S"), values.vehicleStopOnS == true, function(v)
 		call(deps.onToggleVehicleStopOnS, v)
-	end, nil, "toggle_vehicle_stop_s")
-	makeToggle(vehicleBox, 88, tr("toggle_vehicle_fling", "Fling по другим машинам (быстро)"), values.vehicleFlingEnabled == true, function(v)
+	end, 8, nil, "toggle_vehicle_stop_s")
+	makeFlowToggle(wrap, tr("toggle_vehicle_fling", "Fling по другим машинам (быстро)"), values.vehicleFlingEnabled == true, function(v)
 		call(deps.onToggleVehicleFling, v)
-	end, nil, "toggle_vehicle_fling")
+	end, 9, nil, "toggle_vehicle_fling")
+	makeActionBtn(wrap, tr("btn_vehicle_stop_now", "Остановить машину сейчас"), 10, deps.onInstantStopVehicle, "btn_vehicle_stop_now")
 
-	local stopBtn = Instance.new("TextButton")
-	stopBtn.Size = UDim2.new(1, -8, 0, 30)
-	stopBtn.Position = UDim2.new(0, 0, 0, 132)
-	stopBtn.BackgroundColor3 = ui.COLORS.accentSoft
-	stopBtn.BorderSizePixel = 0
-	stopBtn.Font = Enum.Font.GothamSemibold
-	stopBtn.TextSize = 10
-	stopBtn.TextColor3 = ui.COLORS.text
-	stopBtn.Text = tr("btn_vehicle_stop_now", "Остановить машину сейчас")
-	stopBtn.Parent = vehicleBox
-	reg(stopBtn, "btn_vehicle_stop_now")
-	local stopCorner = Instance.new("UICorner")
-	stopCorner.CornerRadius = UDim.new(0, 8)
-	stopCorner.Parent = stopBtn
-	stopBtn.MouseButton1Click:Connect(function()
-		call(deps.onInstantStopVehicle)
-	end)
-
-	makeSectionTitle(wrap, tr("sec_map", "карта"), 5, "sec_map")
-	local gateBox = makeFeatureBox(wrap, 44, 6)
-	local gateBtn = Instance.new("TextButton")
-	gateBtn.Size = UDim2.new(1, -8, 0, 30)
-	gateBtn.BackgroundColor3 = ui.COLORS.accentSoft
-	gateBtn.BorderSizePixel = 0
-	gateBtn.Font = Enum.Font.GothamSemibold
-	gateBtn.TextSize = 11
-	gateBtn.TextColor3 = ui.COLORS.text
-	gateBtn.Text = values.gatesRemoved and tr("btn_gates_removed", "Гейты удалены") or tr("btn_delete_gates", "Удалить гейты НАМЕРТВО")
-	gateBtn.Parent = gateBox
-	reg(gateBtn, values.gatesRemoved and "btn_gates_removed" or "btn_delete_gates")
-	local gateCorner = Instance.new("UICorner")
-	gateCorner.CornerRadius = UDim.new(0, 8)
-	gateCorner.Parent = gateBtn
-	gateBtn.MouseButton1Click:Connect(function()
-		local removed = call(deps.onDeleteGates)
-		if removed then
-			gateBtn.Text = tr("btn_gates_removed", "Гейты удалены")
-			gateBtn.BackgroundColor3 = ui.COLORS.panel
-		end
-	end)
+	makeSectionTitle(wrap, tr("sec_map", "карта"), 11, "sec_map")
+	local gateBtn = makeActionBtn(
+		wrap,
+		values.gatesRemoved and tr("btn_gates_removed", "Гейты удалены") or tr("btn_delete_gates", "Удалить гейты НАМЕРТВО"),
+		12,
+		function()
+			local removed = call(deps.onDeleteGates)
+			if removed and gateBtn then
+				gateBtn.Text = tr("btn_gates_removed", "Гейты удалены")
+				gateBtn.BackgroundColor3 = ui.COLORS.panel
+			end
+		end,
+		values.gatesRemoved and "btn_gates_removed" or "btn_delete_gates"
+	)
+	if values.gatesRemoved and gateBtn then
+		gateBtn.BackgroundColor3 = ui.COLORS.panel
+	end
 end
 
 local function mountSettingsBuiltin(deps, ctx)
@@ -3133,7 +3189,7 @@ local function mountFeatures(ctx)
 		end
 	end
 
-	pcall(extMount, {
+	local ok, err = pcall(extMount, {
 		values = {
 			espEnabled = Config.espEnabled,
 			noclipFoot = Config.noclipFoot,
@@ -3203,6 +3259,9 @@ local function mountFeatures(ctx)
 		translate = ctx.translate or function(key, fallback) return fallback or key end,
 		registerLocale = ctx.registerLocale,
 	}, ctx)
+	if not ok then
+		warn("[EPBR] mountFeatures failed: " .. tostring(err))
+	end
 end
 
 local function mountSettings(ctx)

@@ -13,9 +13,46 @@ function Read-Utf8NoBom([string]$path) {
     return $utf8NoBom.GetString($bytes)
 }
 
+function To-LuaLongString([string]$text) {
+    $eq = 0
+    while ($text -match ('\]' + ('=' * $eq) + '\]')) {
+        $eq++
+    }
+    $open = '[' + ('=' * $eq) + '['
+    $close = ']' + ('=' * $eq) + ']'
+    return "$open$text$close"
+}
+
 $ui = Read-Utf8NoBom $uiPath
 $logic = Read-Utf8NoBom $logicPath
 $boot = Read-Utf8NoBom $bootPath
+
+$embeddedModules = @(
+    "modules\esp.lua",
+    "modules\features-tab.lua",
+    "modules\settings-tab.lua",
+    "modules\locale.lua"
+)
+
+$embeddedLines = New-Object System.Collections.Generic.List[string]
+foreach ($rel in $embeddedModules) {
+    $modPath = Join-Path $base $rel
+    if (-not (Test-Path $modPath)) { continue }
+    $modText = Read-Utf8NoBom $modPath
+    $luaKey = ($rel -replace '\\', '/')
+    $embeddedLines.Add("`t[`"$luaKey`"] = $(To-LuaLongString $modText),")
+}
+
+$embeddedBlock = ""
+if ($embeddedLines.Count -gt 0) {
+    $embeddedBlock = @"
+
+rawset(_G, "__EPBR_EMBEDDED", {
+$($embeddedLines -join "`n")
+})
+
+"@
+}
 
 $header = @'
 -- El Paso, Texas: Border Roleplay
@@ -24,7 +61,7 @@ $header = @'
 
 local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
 local PLACE_ID = 14502598369
-local BUILD = "v0.14.5"
+local BUILD = "v0.14.6"
 
 local Players = game:GetService("Players")
 local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
@@ -53,6 +90,7 @@ local function ensurePlayer()
 	return playerGui ~= nil
 end
 
+'@ + $embeddedBlock + @'
 -- ===== embedded: maxi-hub-ui.lua =====
 local MaxiHubUI = (function()
 
