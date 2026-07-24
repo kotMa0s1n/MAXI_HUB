@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.2"
+local BUILD = "v0.14.4"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -24,10 +24,16 @@ local SMUGGLER_KEYWORDS = {
 	"smuggl", "contraband", "illegal", "cartel", "runner", "dealer", "traffick", "contrabando",
 }
 local SMUGGLE_BUY_COUNT_PER_ITEM = 3
-local PROMPT_HOLD_ZERO_RESWEEP_SECONDS = 40
+local PROMPT_HOLD_ZERO_INTERVAL_SECONDS = 1.0
+local PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS = 4.0
 local BOOST_RETUNE_INTERVAL = 0.35
 local NOCLIP_UPDATE_INTERVAL_IDLE = 0.16
 local NOCLIP_UPDATE_INTERVAL_ROUTE = 0.07
+local ESP_REFRESH_INTERVAL = 0.14
+local FIRST_PERSON_REFRESH_INTERVAL = 0.08
+local ANTICRASH_FRAME_SPIKE_SECONDS = 0.9
+local ANTICRASH_STRIKES_TO_STOP = 3
+local ANTICRASH_COOLDOWN_SECONDS = 25
 local SELL_CONFIRM_TIMEOUT_FAST = 1.25
 local SELL_RETRY_DELAY_FAST = 0.05
 
@@ -46,6 +52,14 @@ local firstPersonAutoActive = false
 local savedCameraState = nil
 local lastNoclipUpdateAt = 0
 local lastBoostRetuneAt = 0
+local lastEspRefreshAt = 0
+local lastFirstPersonApplyAt = 0
+local lastPromptHoldZeroPulseAt = 0
+local promptHoldZeroActiveUntil = 0
+local lastHeartbeatAt = 0
+local heartbeatSpikeStrikes = 0
+local lastAntiCrashAt = 0
+local visiblePrompts = {}
 local smartTeleportTo
 local getPartPosition
 local getPromptWorldPos
@@ -125,6 +139,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local moduleCache = {}
 
 local function getModulePaths(fileName)
@@ -1130,6 +1145,9 @@ local function requestEmergencyStop(reason)
 	stopThread("vehicleFling")
 	stopThread("promptHoldZeroSweep")
 	stopThread("autoWork")
+	promptHoldZeroActiveUntil = 0
+	heartbeatSpikeStrikes = 0
+	table.clear(visiblePrompts)
 	setAutoSmuggleFirstPerson(false)
 	teleportBusy = false
 	forceRestoreAllNoclip()
@@ -1138,6 +1156,33 @@ local function requestEmergencyStop(reason)
 	setStatus(reason or "экстренная остановка")
 	saveConfig()
 	notify("экстренная остановка")
+end
+
+local function maybeTriggerAntiCrash(now, dt)
+	local stressActive = Config.autoSmuggle or Config.vehicleFlingEnabled or teleportBusy
+	if not stressActive then
+		if heartbeatSpikeStrikes > 0 and dt <= 0.35 then
+			heartbeatSpikeStrikes = math.max(0, heartbeatSpikeStrikes - 1)
+		end
+		return false
+	end
+
+	if dt >= ANTICRASH_FRAME_SPIKE_SECONDS then
+		heartbeatSpikeStrikes += 1
+	elseif heartbeatSpikeStrikes > 0 and dt <= 0.4 then
+		heartbeatSpikeStrikes -= 1
+	end
+
+	if heartbeatSpikeStrikes >= ANTICRASH_STRIKES_TO_STOP
+		and (now - lastAntiCrashAt) >= ANTICRASH_COOLDOWN_SECONDS then
+		lastAntiCrashAt = now
+		heartbeatSpikeStrikes = 0
+		Config.forcePromptHoldZero = false
+		Config.espEnabled = false
+		requestEmergencyStop("anti-crash: пойман фриз, авто остановлен")
+		return true
+	end
+	return false
 end
 
 local function isWheelMarkerName(name)
@@ -1506,50 +1551,69 @@ local function forcePromptHoldZero(prompt)
 	end)
 end
 
-local function applyPromptHoldZeroSweep()
+local function trackVisiblePrompt(prompt, shouldKeep)
+	if not prompt or not prompt:IsA("ProximityPrompt") then return end
+	if shouldKeep == false then
+		visiblePrompts[prompt] = nil
+		return
+	end
+	visiblePrompts[prompt] = true
+end
+
+local function armPromptHoldZeroWindow(seconds)
 	if not Config.forcePromptHoldZero then return end
-	if threads.promptHoldZeroSweep then return end
-	startThread("promptHoldZeroSweep", function()
-		local stack = { Workspace }
-		local processed = 0
-		while mounted and threads.promptHoldZeroSweep and #stack > 0 do
-			local inst = stack[#stack]
-			stack[#stack] = nil
-			if inst:IsA("ProximityPrompt") then
-				forcePromptHoldZero(inst)
-			end
-			local children = inst:GetChildren()
-			for i = 1, #children do
-				stack[#stack + 1] = children[i]
-			end
-			processed += 1
-			if processed % 140 == 0 then
-				task.wait()
+	local window = math.max(0.6, tonumber(seconds) or PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS)
+	local untilAt = os.clock() + window
+	if untilAt > promptHoldZeroActiveUntil then
+		promptHoldZeroActiveUntil = untilAt
+	end
+end
+
+local function pulsePromptHoldZeroVisible()
+	if not Config.forcePromptHoldZero then return end
+	local now = os.clock()
+	if (now - lastPromptHoldZeroPulseAt) < PROMPT_HOLD_ZERO_INTERVAL_SECONDS then
+		return
+	end
+	lastPromptHoldZeroPulseAt = now
+	local applied = 0
+	for prompt in pairs(visiblePrompts) do
+		if not prompt or not prompt.Parent then
+			visiblePrompts[prompt] = nil
+		else
+			forcePromptHoldZero(prompt)
+			applied += 1
+			if applied >= 160 then
+				break
 			end
 		end
-		stopThread("promptHoldZeroSweep")
-	end)
+	end
+end
+
+local function applyPromptHoldZeroSweep()
+	armPromptHoldZeroWindow(PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS)
+	pulsePromptHoldZeroVisible()
 end
 
 local function runPromptHoldZeroLoop()
 	stopThread("promptHoldZero")
 	startThread("promptHoldZero", function()
 		while mounted and threads.promptHoldZero do
-			if Config.forcePromptHoldZero then
-				applyPromptHoldZeroSweep()
-			else
-				stopThread("promptHoldZeroSweep")
+			if Config.forcePromptHoldZero and os.clock() <= promptHoldZeroActiveUntil then
+				pulsePromptHoldZeroVisible()
 			end
-			if not waitInterruptible(PROMPT_HOLD_ZERO_RESWEEP_SECONDS) then
+			if not waitInterruptible(PROMPT_HOLD_ZERO_INTERVAL_SECONDS) then
 				break
 			end
 		end
-		stopThread("promptHoldZeroSweep")
 	end)
 end
 
 local function activatePromptSmart(prompt, fallbackHold)
 	if not prompt or not prompt.Parent then return false end
+	trackVisiblePrompt(prompt, true)
+	armPromptHoldZeroWindow(2.5)
+	pulsePromptHoldZeroVisible()
 	lookCameraDown()
 	local hold = tonumber(prompt.HoldDuration) or 0
 	if hold <= 0.05 then
@@ -1589,6 +1653,28 @@ local function findNearestPromptByText(query, nearPos, maxDistance)
 	local fallbackPrompt, fallbackPos, fallbackDist
 	local root = getRootPart()
 	local refPos = nearPos or (root and root.Position)
+
+	for prompt in pairs(visiblePrompts) do
+		if not prompt or not prompt.Parent then
+			visiblePrompts[prompt] = nil
+		elseif prompt.Enabled and promptMatchesQuery(prompt, query) then
+			local pos = getPromptWorldPos(prompt)
+			if pos then
+				local ref = refPos or pos
+				local dist = (pos - ref).Magnitude
+				if not fallbackDist or dist < fallbackDist then
+					fallbackPrompt, fallbackPos, fallbackDist = prompt, pos, dist
+				end
+				if (not maxDistance or dist <= maxDistance) and (not bestDist or dist < bestDist) then
+					bestPrompt, bestPos, bestDist = prompt, pos, dist
+				end
+			end
+		end
+	end
+	if bestPrompt or fallbackPrompt then
+		return bestPrompt or fallbackPrompt, bestPos or fallbackPos, bestDist or fallbackDist
+	end
+
 	local stack = { Workspace }
 	local processed = 0
 	while #stack > 0 and not isActionCancelled() do
@@ -1784,6 +1870,9 @@ end
 
 local function activateBuyPromptRobust(prompt)
 	if not prompt or not prompt.Parent then return false end
+	trackVisiblePrompt(prompt, true)
+	armPromptHoldZeroWindow(3.0)
+	pulsePromptHoldZeroVisible()
 	lookCameraDown()
 	if typeof(fireproximityprompt) == "function" then
 		pcall(function() fireproximityprompt(prompt, 0) end)
@@ -1802,6 +1891,9 @@ end
 
 local function activateSellPromptFast(prompt)
 	if not prompt or not prompt.Parent then return false end
+	trackVisiblePrompt(prompt, true)
+	armPromptHoldZeroWindow(2.5)
+	pulsePromptHoldZeroVisible()
 	lookCameraDown()
 	pcall(function()
 		prompt.HoldDuration = 0
@@ -1829,6 +1921,7 @@ local function buySmuggleItemTimes(itemName, nearPos, times)
 
 		for attempt = 1, maxAttemptsPerItem do
 			if isActionCancelled() then return false, nil end
+			armPromptHoldZeroWindow(2.5)
 
 			local prompt, pos = findNearestSmugglePurchasePrompt(itemName, nearPos)
 			if not prompt then
@@ -1842,6 +1935,7 @@ local function buySmuggleItemTimes(itemName, nearPos, times)
 					return false, nil
 				end
 				if not waitInterruptible(0.14) then return false, nil end
+				pulsePromptHoldZeroVisible()
 			end
 
 			if pos then
@@ -2296,6 +2390,10 @@ local function teleportToWaypoint(key, extraOpts)
 	end
 
 	local ok = smartTeleportTo(pos, opts)
+	if ok then
+		armPromptHoldZeroWindow(6.0)
+		pulsePromptHoldZeroVisible()
+	end
 	if not ok then
 		notify("ТП → " .. string.upper(tostring(key)) .. " не удался")
 	end
@@ -2326,11 +2424,16 @@ end
 local function teleportFootForCycle(pos, phaseName, footMode)
 	if isActionCancelled() then return false end
 	setPhase(phaseName or "move")
-	return smartTeleportTo(pos, {
+	local ok = smartTeleportTo(pos, {
 		forceMode = "foot",
 		routeNoclip = true,
 		footMode = footMode or "elevated",
 	})
+	if ok then
+		armPromptHoldZeroWindow(4.0)
+		pulsePromptHoldZeroVisible()
+	end
+	return ok
 end
 
 local function runCargoPickupSequenceFoot()
@@ -2433,9 +2536,11 @@ local function runAutoSmuggleLoop()
 		setVehicleFlingEnabled(false)
 	end
 	setAutoSmuggleFirstPerson(true)
+	applyPromptHoldZeroSweep()
 	stopThread("autoSmuggle")
 	startThread("autoSmuggle", function()
 		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
+			armPromptHoldZeroWindow(2.0)
 			applyFirstPersonCamera()
 			local ok, cycleOk = pcall(runCargoPickupSequence)
 			if not ok then
@@ -2790,10 +2895,238 @@ local function mountMain(ctx)
 	end, "btn_tp_foot")
 end
 
+local function mountFeaturesBuiltin(deps, ctx)
+	deps = deps or {}
+	local values = deps.values or {}
+	local ui = ctx and ctx.ui
+	local page = ctx and ctx.pages and ctx.pages.features
+	if not ui or not page then return end
+
+	local function call(fn, ...)
+		if type(fn) == "function" then
+			return fn(...)
+		end
+		return nil
+	end
+
+	local function tr(key, fallback)
+		local fn = deps.translate
+		if type(fn) == "function" then
+			local ok, value = pcall(fn, key, fallback)
+			if ok and type(value) == "string" and value ~= "" then
+				return value
+			end
+		end
+		return fallback or key
+	end
+
+	local function reg(el, key)
+		if type(deps.registerLocale) == "function" and el and key then
+			deps.registerLocale(el, key)
+		end
+	end
+
+	local function makeFeatureBox(parent, height, order)
+		local box = Instance.new("Frame")
+		box.Size = UDim2.new(1, 0, 0, height)
+		box.BackgroundTransparency = 1
+		box.LayoutOrder = order
+		box.Parent = parent
+		return box
+	end
+
+	local scroll = ui.makeScrollPage(page)
+	local wrap = ui.makeListWrap(scroll)
+	local makeSectionTitle = ui.makeSectionTitle
+	local makeToggle = ui.makeToggle
+
+	makeSectionTitle(wrap, tr("sec_main", "основное"), 1, "sec_main")
+	local mainBox = makeFeatureBox(wrap, 176, 2)
+	makeToggle(mainBox, 0, tr("toggle_esp_players", "ESP игроков"), values.espEnabled == true, function(v)
+		call(deps.onToggleEsp, v)
+	end, nil, "toggle_esp_players")
+	makeToggle(mainBox, 44, tr("toggle_noclip_foot", "Постоянный noclip (ноги)"), values.noclipFoot == true, function(v)
+		call(deps.onToggleNoclipFoot, v)
+	end, nil, "toggle_noclip_foot")
+	makeToggle(mainBox, 88, tr("toggle_noclip_vehicle", "Постоянный noclip (машина)"), values.noclipVehicles == true, function(v)
+		call(deps.onToggleNoclipVehicle, v)
+	end, nil, "toggle_noclip_vehicle")
+	makeToggle(mainBox, 132, tr("toggle_prompt_zero", "Убрать задержку E (везде)"), values.forcePromptHoldZero ~= false, function(v)
+		call(deps.onTogglePromptHoldZero, v)
+	end, nil, "toggle_prompt_zero")
+
+	makeSectionTitle(wrap, tr("sec_vehicle_opt", "машина (опц.)"), 3, "sec_vehicle_opt")
+	local vehicleBox = makeFeatureBox(wrap, 176, 4)
+	makeToggle(vehicleBox, 0, tr("toggle_vehicle_boost", "Буст машины"), values.vehicleBoostEnabled == true, function(v)
+		call(deps.onToggleVehicleBoost, v)
+	end, nil, "toggle_vehicle_boost")
+	makeToggle(vehicleBox, 44, tr("toggle_vehicle_stop_s", "Мгновенный стоп на S"), values.vehicleStopOnS == true, function(v)
+		call(deps.onToggleVehicleStopOnS, v)
+	end, nil, "toggle_vehicle_stop_s")
+	makeToggle(vehicleBox, 88, tr("toggle_vehicle_fling", "Fling по другим машинам (быстро)"), values.vehicleFlingEnabled == true, function(v)
+		call(deps.onToggleVehicleFling, v)
+	end, nil, "toggle_vehicle_fling")
+
+	local stopBtn = Instance.new("TextButton")
+	stopBtn.Size = UDim2.new(1, -8, 0, 30)
+	stopBtn.Position = UDim2.new(0, 0, 0, 132)
+	stopBtn.BackgroundColor3 = ui.COLORS.accentSoft
+	stopBtn.BorderSizePixel = 0
+	stopBtn.Font = Enum.Font.GothamSemibold
+	stopBtn.TextSize = 10
+	stopBtn.TextColor3 = ui.COLORS.text
+	stopBtn.Text = tr("btn_vehicle_stop_now", "Остановить машину сейчас")
+	stopBtn.Parent = vehicleBox
+	reg(stopBtn, "btn_vehicle_stop_now")
+	local stopCorner = Instance.new("UICorner")
+	stopCorner.CornerRadius = UDim.new(0, 8)
+	stopCorner.Parent = stopBtn
+	stopBtn.MouseButton1Click:Connect(function()
+		call(deps.onInstantStopVehicle)
+	end)
+
+	makeSectionTitle(wrap, tr("sec_map", "карта"), 5, "sec_map")
+	local gateBox = makeFeatureBox(wrap, 44, 6)
+	local gateBtn = Instance.new("TextButton")
+	gateBtn.Size = UDim2.new(1, -8, 0, 30)
+	gateBtn.BackgroundColor3 = ui.COLORS.accentSoft
+	gateBtn.BorderSizePixel = 0
+	gateBtn.Font = Enum.Font.GothamSemibold
+	gateBtn.TextSize = 11
+	gateBtn.TextColor3 = ui.COLORS.text
+	gateBtn.Text = values.gatesRemoved and tr("btn_gates_removed", "Гейты удалены") or tr("btn_delete_gates", "Удалить гейты НАМЕРТВО")
+	gateBtn.Parent = gateBox
+	reg(gateBtn, values.gatesRemoved and "btn_gates_removed" or "btn_delete_gates")
+	local gateCorner = Instance.new("UICorner")
+	gateCorner.CornerRadius = UDim.new(0, 8)
+	gateCorner.Parent = gateBtn
+	gateBtn.MouseButton1Click:Connect(function()
+		local removed = call(deps.onDeleteGates)
+		if removed then
+			gateBtn.Text = tr("btn_gates_removed", "Гейты удалены")
+			gateBtn.BackgroundColor3 = ui.COLORS.panel
+		end
+	end)
+end
+
+local function mountSettingsBuiltin(deps, ctx)
+	deps = deps or {}
+	local values = deps.values or {}
+	local ui = ctx and ctx.ui
+	local page = ctx and ctx.pages and ctx.pages.settings
+	if not ui or not page then return end
+
+	local function set(key, value)
+		if type(deps.onSet) == "function" then
+			deps.onSet(key, value)
+		end
+	end
+
+	local function tr(key, fallback)
+		local fn = deps.translate
+		if type(fn) == "function" then
+			local ok, value = pcall(fn, key, fallback)
+			if ok and type(value) == "string" and value ~= "" then
+				return value
+			end
+		end
+		return fallback or key
+	end
+
+	local function reg(el, key)
+		if type(deps.registerLocale) == "function" and el and key then
+			deps.registerLocale(el, key)
+		end
+	end
+
+	local scroll = ui.makeScrollPage(page)
+	local wrap = ui.makeListWrap(scroll)
+	local makeSectionTitle = ui.makeSectionTitle
+	local makeSlider = ui.makeSlider
+
+	makeSectionTitle(wrap, tr("sec_tp_foot", "телепорт ног"), 1, "sec_tp_foot")
+	local tpBox = Instance.new("Frame")
+	tpBox.Size = UDim2.new(1, 0, 0, 292)
+	tpBox.BackgroundTransparency = 1
+	tpBox.LayoutOrder = 2
+	tpBox.Parent = wrap
+
+	makeSlider(tpBox, 0, tr("slider_tp_step", "Длина шага ТП"), 0.05, 1, values.stepSize or 0.20, function(v) set("stepSize", v) end, "slider_tp_step")
+	makeSlider(tpBox, 60, tr("slider_tp_steps_per_frame", "Шагов за кадр"), 1, 12, values.stepsPerFrame or 10, function(v) set("stepsPerFrame", v) end, "slider_tp_steps_per_frame")
+	makeSlider(tpBox, 120, tr("slider_tp_height", "Высота полёта"), 10, 90, values.climbHeight or 45, function(v) set("climbHeight", v) end, "slider_tp_height")
+	makeSlider(tpBox, 180, tr("slider_tp_descend", "Замедление спуска"), 0.2, 1, values.descendStepMult or 0.32, function(v) set("descendStepMult", v) end, "slider_tp_descend")
+	makeSlider(tpBox, 240, tr("slider_tp_hold", "Фиксация на точке (сек)"), 0, 1.2, values.finalHoldSeconds or 0.50, function(v) set("finalHoldSeconds", v) end, "slider_tp_hold")
+
+	makeSectionTitle(wrap, tr("sec_vehicle_opt", "машина (опц.)"), 3, "sec_vehicle_opt")
+	local boostBox = Instance.new("Frame")
+	boostBox.Size = UDim2.new(1, 0, 0, 52)
+	boostBox.BackgroundTransparency = 1
+	boostBox.LayoutOrder = 4
+	boostBox.Parent = wrap
+
+	makeSlider(boostBox, 0, tr("slider_boost_max_speed", "Лимит скорости буста"), 20, 500, values.vehicleBoostMaxSpeed or 60, function(v) set("vehicleBoostMaxSpeed", v) end, "slider_boost_max_speed")
+
+	makeSectionTitle(wrap, tr("sec_fling_orbit", "флинг (орбита)"), 5, "sec_fling_orbit")
+	local flingBox = Instance.new("Frame")
+	flingBox.Size = UDim2.new(1, 0, 0, 652)
+	flingBox.BackgroundTransparency = 1
+	flingBox.LayoutOrder = 6
+	flingBox.Parent = wrap
+
+	makeSlider(flingBox, 0, tr("slider_fling_orbit_speed", "Fling: скорость вращения"), 2, 60, values.vehicleFlingOrbitSpeed or 20, function(v) set("vehicleFlingOrbitSpeed", v) end, "slider_fling_orbit_speed")
+	makeSlider(flingBox, 60, tr("slider_fling_fore_aft", "Fling: длина вперёд/назад"), 0.5, 12, values.vehicleFlingForeAft or 12, function(v) set("vehicleFlingForeAft", v) end, "slider_fling_fore_aft")
+	makeSlider(flingBox, 120, tr("slider_fling_side", "Fling: ширина орбиты"), 0.5, 12, values.vehicleFlingSide or 3.6, function(v) set("vehicleFlingSide", v) end, "slider_fling_side")
+	makeSlider(flingBox, 180, tr("slider_fling_height", "Fling: высота (ниже/выше)"), -4, 3, values.vehicleFlingHeightOffset or -0.8, function(v) set("vehicleFlingHeightOffset", v) end, "slider_fling_height")
+	makeSlider(flingBox, 240, tr("slider_fling_bob", "Fling: волна по высоте"), 0, 4, values.vehicleFlingBobAmplitude or 3.2, function(v) set("vehicleFlingBobAmplitude", v) end, "slider_fling_bob")
+	makeSlider(flingBox, 300, tr("slider_fling_linear", "Fling: сила толчка"), 40, 900, values.vehicleFlingLinearPower or 900, function(v) set("vehicleFlingLinearPower", v) end, "slider_fling_linear")
+	makeSlider(flingBox, 360, tr("slider_fling_spin", "Fling: сила вращения"), 60, 1800, values.vehicleFlingSpinPower or 1800, function(v) set("vehicleFlingSpinPower", v) end, "slider_fling_spin")
+	makeSlider(flingBox, 420, tr("slider_fling_hold", "Fling: держать цель (сек)"), 0.3, 10, values.vehicleFlingHoldSeconds or 2.4, function(v) set("vehicleFlingHoldSeconds", v) end, "slider_fling_hold")
+	makeSlider(flingBox, 480, tr("slider_fling_regrab", "Fling: пауза между целями"), 0, 0.5, values.vehicleFlingRegrabDelay or 0.2, function(v) set("vehicleFlingRegrabDelay", v) end, "slider_fling_regrab")
+	makeSlider(flingBox, 540, tr("slider_fling_ultra", "Fling: УЛЬТРА множитель"), 0.5, 3.5, values.vehicleFlingUltraMult or 2.0, function(v) set("vehicleFlingUltraMult", v) end, "slider_fling_ultra")
+
+	local presetRow = Instance.new("Frame")
+	presetRow.Size = UDim2.new(1, 0, 0, 32)
+	presetRow.Position = UDim2.new(0, 0, 0, 604)
+	presetRow.BackgroundTransparency = 1
+	presetRow.Parent = flingBox
+
+	local function makePresetBtn(text, x, w, presetName, localeKey)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0, w, 0, 28)
+		b.Position = UDim2.new(0, x, 0, 0)
+		b.BackgroundColor3 = ui.COLORS.accentSoft
+		b.BorderSizePixel = 0
+		b.Font = Enum.Font.GothamSemibold
+		b.TextSize = 10
+		b.TextColor3 = ui.COLORS.text
+		b.Text = text
+		b.Parent = presetRow
+		reg(b, localeKey)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 8)
+		c.Parent = b
+		b.MouseButton1Click:Connect(function()
+			set("applyFlingPreset", presetName)
+		end)
+	end
+
+	makePresetBtn(tr("btn_fling_soft", "Fling: Мягкий"), 0, 130, "soft", "btn_fling_soft")
+	makePresetBtn(tr("btn_fling_user", "Fling: Твой"), 136, 130, "user", "btn_fling_user")
+	makePresetBtn(tr("btn_fling_ultra", "Fling: Ультра"), 272, 130, "ultra", "btn_fling_ultra")
+end
+
+local function shouldUseExternalUiModules()
+	local genv = typeof(getgenv) == "function" and getgenv() or _G
+	return type(genv) == "table" and genv.EPBRUseExternalUiModules == true
+end
+
 local function mountFeatures(ctx)
-	local extMount = loadOptionalModule("modules/features-tab.lua")
-	if type(extMount) ~= "function" then
-		return
+	local extMount = mountFeaturesBuiltin
+	if shouldUseExternalUiModules() then
+		local mod = loadOptionalModule("modules/features-tab.lua")
+		if type(mod) == "function" then
+			extMount = mod
+		end
 	end
 
 	pcall(extMount, {
@@ -2833,7 +3166,8 @@ local function mountFeatures(ctx)
 			if v then
 				applyPromptHoldZeroSweep()
 			else
-				stopThread("promptHoldZeroSweep")
+				promptHoldZeroActiveUntil = 0
+				table.clear(visiblePrompts)
 			end
 			saveConfig()
 		end,
@@ -2868,9 +3202,12 @@ local function mountFeatures(ctx)
 end
 
 local function mountSettings(ctx)
-	local extMount = loadOptionalModule("modules/settings-tab.lua")
-	if type(extMount) ~= "function" then
-		return
+	local extMount = mountSettingsBuiltin
+	if shouldUseExternalUiModules() then
+		local mod = loadOptionalModule("modules/settings-tab.lua")
+		if type(mod) == "function" then
+			extMount = mod
+		end
 	end
 
 	local function onSet(key, v)
@@ -2989,6 +3326,11 @@ function M.stop()
 	local char = getCharacter()
 	if char then restoreCharacterCollision(char) end
 	teleportBusy = false
+	promptHoldZeroActiveUntil = 0
+	lastPromptHoldZeroPulseAt = 0
+	heartbeatSpikeStrikes = 0
+	lastAntiCrashAt = 0
+	table.clear(visiblePrompts)
 	notify("выгружен")
 end
 
@@ -3003,6 +3345,14 @@ function M.mount(ctx)
 	local startupChar = getCharacter()
 	if startupChar then restoreCharacterCollision(startupChar) end
 	if Config.gatesRemoved then setGatesRemoved(true) end
+	table.clear(visiblePrompts)
+	promptHoldZeroActiveUntil = 0
+	lastPromptHoldZeroPulseAt = 0
+	lastEspRefreshAt = 0
+	lastFirstPersonApplyAt = 0
+	heartbeatSpikeStrikes = 0
+	lastAntiCrashAt = 0
+	lastHeartbeatAt = os.clock()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		espApi.bind(player)
@@ -3010,10 +3360,15 @@ function M.mount(ctx)
 	trackConn(Players.PlayerAdded:Connect(function(player)
 		espApi.bind(player)
 	end))
-	trackConn(Workspace.DescendantAdded:Connect(function(inst)
-		if Config.forcePromptHoldZero and inst:IsA("ProximityPrompt") then
-			forcePromptHoldZero(inst)
+	trackConn(ProximityPromptService.PromptShown:Connect(function(prompt)
+		trackVisiblePrompt(prompt, true)
+		if Config.forcePromptHoldZero then
+			armPromptHoldZeroWindow(PROMPT_HOLD_ZERO_ACTION_WINDOW_SECONDS)
+			forcePromptHoldZero(prompt)
 		end
+	end))
+	trackConn(ProximityPromptService.PromptHidden:Connect(function(prompt)
+		trackVisiblePrompt(prompt, false)
 	end))
 
 	trackConn(UserInputService.InputBegan:Connect(function(input, processed)
@@ -3047,8 +3402,16 @@ function M.mount(ctx)
 
 	trackConn(RunService.Heartbeat:Connect(function()
 		local now = os.clock()
+		local dt = now - (lastHeartbeatAt > 0 and lastHeartbeatAt or now)
+		lastHeartbeatAt = now
+		if maybeTriggerAntiCrash(now, dt) then
+			return
+		end
 		if firstPersonAutoActive then
-			applyFirstPersonCamera()
+			if (now - lastFirstPersonApplyAt) >= FIRST_PERSON_REFRESH_INTERVAL then
+				applyFirstPersonCamera()
+				lastFirstPersonApplyAt = now
+			end
 		end
 		if Config.noclipFoot or Config.noclipVehicles or routeNoclipActive then
 			local interval = (routeNoclipActive or teleportBusy) and NOCLIP_UPDATE_INTERVAL_ROUTE or NOCLIP_UPDATE_INTERVAL_IDLE
@@ -3057,7 +3420,10 @@ function M.mount(ctx)
 				lastNoclipUpdateAt = now
 			end
 		end
-		if Config.espEnabled then espApi.refresh() end
+		if Config.espEnabled and (now - lastEspRefreshAt) >= ESP_REFRESH_INTERVAL then
+			espApi.refresh()
+			lastEspRefreshAt = now
+		end
 		if Config.vehicleBoostEnabled then
 			local vehicle = getVehicle()
 			if vehicle then
