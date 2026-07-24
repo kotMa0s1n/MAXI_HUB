@@ -4,7 +4,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.7"
+local BUILD = "v0.14.8"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -2752,220 +2752,252 @@ local function mountMain(ctx)
 	local scroll = makeScrollPage(page)
 	local wrap = ui.makeListWrap and ui.makeListWrap(scroll) or scroll
 
-	local function makeHost(order, height)
+	local wrapPad = Instance.new("UIPadding")
+	wrapPad.PaddingLeft = UDim.new(0, 4)
+	wrapPad.PaddingRight = UDim.new(0, 10)
+	wrapPad.Parent = wrap
+
+	local BTN_W = 128
+	local BTN_H = 30
+	local ROW_GAP = 16
+
+	local function mountAdaptivePanel(holder, title, height, bodyOffsetY, localeKey, setupBody)
+		holder.Size = UDim2.new(1, 0, 0, height)
+		holder.BackgroundTransparency = 1
+		task.defer(function()
+			if not holder.Parent then
+				return
+			end
+			local w = math.floor(holder.AbsoluteSize.X + 0.5)
+			if w < 80 then
+				task.delay(0.05, function()
+					mountAdaptivePanel(holder, title, height, bodyOffsetY, localeKey, setupBody)
+				end)
+				return
+			end
+			for _, child in ipairs(holder:GetChildren()) do
+				child:Destroy()
+			end
+			local body = makeFlowPanel(holder, title, w, height, 0, 0, bodyOffsetY, localeKey)
+			if setupBody then
+				setupBody(body, w)
+			end
+		end)
+	end
+
+	local function makeBlockHost(order, height)
 		local host = Instance.new("Frame")
-		host.Size = UDim2.new(1, -8, 0, height)
+		host.Size = UDim2.new(1, 0, 0, height)
 		host.BackgroundTransparency = 1
 		host.LayoutOrder = order
-		host.ClipsDescendants = true
 		host.Parent = wrap
 		return host
 	end
 
-	-- Контентная зона ~416px, минус padding скролла и скроллбар
-	local PANEL_FULL = 404
-	local PANEL_HALF = 194
-	local PANEL_GAP = 16
-	local CARGO_CELL_W = 191
-	local BTN_W = 128
-	local BTN_H = 30
-
 	local function makeSplitRow(parent, order, height)
 		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -8, 0, height)
+		row.Size = UDim2.new(1, 0, 0, height)
 		row.BackgroundTransparency = 1
 		row.LayoutOrder = order
-		row.ClipsDescendants = true
 		row.Parent = parent
 		local lay = Instance.new("UIListLayout")
 		lay.FillDirection = Enum.FillDirection.Horizontal
-		lay.Padding = UDim.new(0, PANEL_GAP)
+		lay.Padding = UDim.new(0, ROW_GAP)
 		lay.SortOrder = Enum.SortOrder.LayoutOrder
 		lay.Parent = row
 		return row
 	end
 
-	local function makeHalfSlot(parent, order)
+	local function makeHalfHolder(parent, order)
 		local slot = Instance.new("Frame")
-		slot.Size = UDim2.new(0, PANEL_HALF, 1, 0)
+		slot.Size = UDim2.new(0.5, -8, 1, 0)
 		slot.BackgroundTransparency = 1
 		slot.LayoutOrder = order
 		slot.Parent = parent
-		return slot
+		local holder = Instance.new("Frame")
+		holder.Size = UDim2.new(1, 0, 1, 0)
+		holder.BackgroundTransparency = 1
+		holder.Parent = slot
+		return holder
 	end
 
 	local topRow = makeSplitRow(wrap, 1, 200)
-	local statusPanel = makeFlowPanel(makeHalfSlot(topRow, 1), L("panel_status", "Статус"), PANEL_HALF, 200, 0, 0, nil, "panel_status")
-	statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
-	phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
-	statusValueLabel.Text = State.status
-	phaseValueLabel.Text = State.phase
+	mountAdaptivePanel(makeHalfHolder(topRow, 1), L("panel_status", "Статус"), 200, nil, "panel_status", function(statusPanel)
+		statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
+		phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
+		statusValueLabel.Text = State.status
+		phaseValueLabel.Text = State.phase
+	end)
 
-	local points = makeFlowPanel(makeHalfSlot(topRow, 2), L("panel_points", "Точки"), PANEL_HALF, 200, 0, 0, 35, "panel_points")
-	pickupValueLabel = makeStatRow(points, L("stat_pickup", "PICKUP"), 1, "stat_pickup")
-	dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
-	footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
-	cargoValueLabel = makeStatRow(points, L("stat_cargo", "Груз"), 4, "stat_cargo")
-	refreshWaypointLabels()
+	mountAdaptivePanel(makeHalfHolder(topRow, 2), L("panel_points", "Точки"), 200, 35, "panel_points", function(points)
+		pickupValueLabel = makeStatRow(points, L("stat_pickup", "PICKUP"), 1, "stat_pickup")
+		dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
+		footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
+		cargoValueLabel = makeStatRow(points, L("stat_cargo", "Груз"), 4, "stat_cargo")
+		refreshWaypointLabels()
+	end)
 
-	local cargoHost = makeHost(2, 166)
-	local cargoPanel = makeFlowPanel(cargoHost, L("panel_cargo", "Выбор груза"), PANEL_FULL, 166, 0, 0, 40, "panel_cargo")
-	local cargoRow = Instance.new("Frame")
-	cargoRow.Size = UDim2.new(1, 0, 0, 106)
-	cargoRow.BackgroundTransparency = 1
-	cargoRow.LayoutOrder = 1
-	cargoRow.Parent = cargoPanel
+	local cargoHost = makeBlockHost(2, 166)
+	mountAdaptivePanel(cargoHost, L("panel_cargo", "Выбор груза"), 166, 40, "panel_cargo", function(cargoPanel, panelW)
+		local cargoCellW = math.max(120, math.floor((panelW - 16 - 6) / 2))
+		local cargoRow = Instance.new("Frame")
+		cargoRow.Size = UDim2.new(1, 0, 0, 106)
+		cargoRow.BackgroundTransparency = 1
+		cargoRow.LayoutOrder = 1
+		cargoRow.Parent = cargoPanel
 
-	local cargoGrid = Instance.new("UIGridLayout")
-	cargoGrid.CellSize = UDim2.new(0, CARGO_CELL_W, 0, 28)
-	cargoGrid.CellPadding = UDim2.new(0, 6, 0, 6)
-	cargoGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	cargoGrid.SortOrder = Enum.SortOrder.LayoutOrder
-	cargoGrid.Parent = cargoRow
+		local cargoGrid = Instance.new("UIGridLayout")
+		cargoGrid.CellSize = UDim2.new(0, cargoCellW, 0, 28)
+		cargoGrid.CellPadding = UDim2.new(0, 6, 0, 6)
+		cargoGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+		cargoGrid.SortOrder = Enum.SortOrder.LayoutOrder
+		cargoGrid.Parent = cargoRow
 
-	local cargoBtns = {}
-	local function getCargoIndex(items, itemName)
-		for i, name in ipairs(items) do
-			if name == itemName then return i end
+		local cargoBtns = {}
+		local function getCargoIndex(items, itemName)
+			for i, name in ipairs(items) do
+				if name == itemName then return i end
+			end
+			return nil
 		end
-		return nil
-	end
-	local function refreshCargoBtns()
-		local selected = getSelectedCargoItems()
-		local selectedOrder = {}
-		for i, name in ipairs(selected) do
-			selectedOrder[name] = i
-		end
-		for _, b in ipairs(cargoBtns) do
-			local itemName = b:GetAttribute("CargoName")
-			local order = selectedOrder[itemName]
-			local isSelected = order ~= nil
-			b:SetAttribute("Selected", isSelected)
-			b.BackgroundColor3 = isSelected and COLORS.accentSoft or COLORS.panel
-			b.Text = isSelected and string.format("%d) %s", order, itemName) or itemName
-		end
-	end
-	for i, name in ipairs(CARGO_ITEMS) do
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(0, CARGO_CELL_W, 0, 28)
-		btn.BackgroundColor3 = COLORS.panel
-		btn.BorderSizePixel = 0
-		btn.Font = Enum.Font.Gotham
-		btn.TextSize = 10
-		btn.TextColor3 = COLORS.text
-		btn.Text = name
-		btn.LayoutOrder = i
-		btn.Parent = cargoRow
-		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 6) c.Parent = btn
-		btn:SetAttribute("CargoName", name)
-		btn:SetAttribute("Selected", false)
-		btn.MouseButton1Click:Connect(function()
+		local function refreshCargoBtns()
 			local selected = getSelectedCargoItems()
-			local idx = getCargoIndex(selected, name)
-			if idx then
-				if #selected > 1 then
-					table.remove(selected, idx)
-				end
-			else
-				if #selected >= MAX_SELECTED_CARGO_ITEMS then
-					table.remove(selected, #selected)
-				end
-				table.insert(selected, name)
+			local selectedOrder = {}
+			for i, name in ipairs(selected) do
+				selectedOrder[name] = i
 			end
-			Config.cargoItems = sanitizeCargoSelection(selected)
-			Config.cargoItem = Config.cargoItems[1]
-			saveConfig()
-			refreshCargoBtns()
-			refreshWaypointLabels()
-		end)
-		table.insert(cargoBtns, btn)
-	end
-	refreshCargoBtns()
-
-	local ctrlHost = makeHost(3, 178)
-	local ctrl = makeFlowPanel(ctrlHost, L("panel_cycle", "Телепорт и цикл"), PANEL_FULL, 178, 0, 0, 40, "panel_cycle")
-	makeFlowToggle(ctrl, L("toggle_auto_smuggle", "Авто контрабанда (цикл)"), Config.autoSmuggle, function(v)
-		Config.autoSmuggle = v
-		if v then
-			clearEmergencyStop()
-			if Config.vehicleFlingEnabled then
-				setVehicleFlingEnabled(false)
+			for _, b in ipairs(cargoBtns) do
+				local itemName = b:GetAttribute("CargoName")
+				local order = selectedOrder[itemName]
+				local isSelected = order ~= nil
+				b:SetAttribute("Selected", isSelected)
+				b.BackgroundColor3 = isSelected and COLORS.accentSoft or COLORS.panel
+				b.Text = isSelected and string.format("%d) %s", order, itemName) or itemName
 			end
-			runAutoSmuggleLoop()
-		else
-			stopThread("autoSmuggle")
-			forceRestoreAllNoclip()
-			restoreSmugglePromptSettings()
-			setAutoSmuggleFirstPerson(false)
-			setPhase("idle")
 		end
-		saveConfig()
-	end, 1, nil, "toggle_auto_smuggle")
-
-	local btnRow = Instance.new("Frame")
-	btnRow.Size = UDim2.new(1, 0, 0, 36)
-	btnRow.BackgroundTransparency = 1
-	btnRow.LayoutOrder = 2
-	btnRow.Parent = ctrl
-
-	local btnGrid = Instance.new("UIGridLayout")
-	btnGrid.CellSize = UDim2.new(0, BTN_W, 0, BTN_H)
-	btnGrid.CellPadding = UDim2.new(0, 8, 0, 6)
-	btnGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	btnGrid.SortOrder = Enum.SortOrder.LayoutOrder
-	btnGrid.Parent = btnRow
-
-	local function makeBtn(text, order, cb, localeKey)
-		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0, BTN_W, 0, BTN_H)
-		b.BackgroundColor3 = COLORS.accentSoft
-		b.BorderSizePixel = 0
-		b.Font = Enum.Font.GothamSemibold
-		b.TextSize = 10
-		b.TextColor3 = COLORS.text
-		b.Text = text
-		b.LayoutOrder = order
-		b.Parent = btnRow
-		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = b
-		if type(registerLocale) == "function" and localeKey then
-			registerLocale(b, localeKey)
-		end
-		b.MouseButton1Click:Connect(function()
-			task.spawn(function()
-				clearEmergencyStop()
-				local ok, err = pcall(cb)
-				if not ok then
-					setStatus("ошибка кнопки")
-					notify("ошибка кнопки: " .. tostring(err))
+		for i, name in ipairs(CARGO_ITEMS) do
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(0, cargoCellW, 0, 28)
+			btn.BackgroundColor3 = COLORS.panel
+			btn.BorderSizePixel = 0
+			btn.Font = Enum.Font.Gotham
+			btn.TextSize = 10
+			btn.TextColor3 = COLORS.text
+			btn.Text = name
+			btn.LayoutOrder = i
+			btn.Parent = cargoRow
+			local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 6) c.Parent = btn
+			btn:SetAttribute("CargoName", name)
+			btn:SetAttribute("Selected", false)
+			btn.MouseButton1Click:Connect(function()
+				local selected = getSelectedCargoItems()
+				local idx = getCargoIndex(selected, name)
+				if idx then
+					if #selected > 1 then
+						table.remove(selected, idx)
+					end
+				else
+					if #selected >= MAX_SELECTED_CARGO_ITEMS then
+						table.remove(selected, #selected)
+					end
+					table.insert(selected, name)
 				end
+				Config.cargoItems = sanitizeCargoSelection(selected)
+				Config.cargoItem = Config.cargoItems[1]
+				saveConfig()
+				refreshCargoBtns()
+				refreshWaypointLabels()
 			end)
-		end)
-	end
+			table.insert(cargoBtns, btn)
+		end
+		refreshCargoBtns()
+	end)
 
-	makeBtn(L("btn_tp_pickup", "ТП -> PICKUP"), 1, function()
-		teleportToWaypoint("pickup", {
-			footMode = "elevated",
-			instant = true,
-			useSavedY = true,
-			skipVehicleStabilize = true,
-		})
-	end, "btn_tp_pickup")
-	makeBtn(L("btn_tp_dropoff", "ТП -> DROPOFF"), 2, function()
-		teleportToWaypoint("dropoff", {
-			footMode = "elevated",
-			instant = true,
-			useSavedY = true,
-			skipVehicleStabilize = true,
-		})
-	end, "btn_tp_dropoff")
-	makeBtn(L("btn_tp_foot", "ТП -> FOOT"), 3, function()
-		teleportToWaypoint("footZone", {
-			footMode = "elevated",
-			instant = true,
-			useSavedY = true,
-			skipVehicleStabilize = true,
-		})
-	end, "btn_tp_foot")
+	local ctrlHost = makeBlockHost(3, 178)
+	mountAdaptivePanel(ctrlHost, L("panel_cycle", "Телепорт и цикл"), 178, 40, "panel_cycle", function(ctrl)
+		makeFlowToggle(ctrl, L("toggle_auto_smuggle", "Авто контрабанда (цикл)"), Config.autoSmuggle, function(v)
+			Config.autoSmuggle = v
+			if v then
+				clearEmergencyStop()
+				if Config.vehicleFlingEnabled then
+					setVehicleFlingEnabled(false)
+				end
+				runAutoSmuggleLoop()
+			else
+				stopThread("autoSmuggle")
+				forceRestoreAllNoclip()
+				restoreSmugglePromptSettings()
+				setAutoSmuggleFirstPerson(false)
+				setPhase("idle")
+			end
+			saveConfig()
+		end, 1, nil, "toggle_auto_smuggle")
+
+		local btnRow = Instance.new("Frame")
+		btnRow.Size = UDim2.new(1, 0, 0, 36)
+		btnRow.BackgroundTransparency = 1
+		btnRow.LayoutOrder = 2
+		btnRow.Parent = ctrl
+
+		local btnGrid = Instance.new("UIGridLayout")
+		btnGrid.CellSize = UDim2.new(0, BTN_W, 0, BTN_H)
+		btnGrid.CellPadding = UDim2.new(0, 8, 0, 6)
+		btnGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+		btnGrid.SortOrder = Enum.SortOrder.LayoutOrder
+		btnGrid.Parent = btnRow
+
+		local function makeBtn(text, order, cb, localeKey)
+			local b = Instance.new("TextButton")
+			b.Size = UDim2.new(0, BTN_W, 0, BTN_H)
+			b.BackgroundColor3 = COLORS.accentSoft
+			b.BorderSizePixel = 0
+			b.Font = Enum.Font.GothamSemibold
+			b.TextSize = 10
+			b.TextColor3 = COLORS.text
+			b.Text = text
+			b.LayoutOrder = order
+			b.Parent = btnRow
+			local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = b
+			if type(registerLocale) == "function" and localeKey then
+				registerLocale(b, localeKey)
+			end
+			b.MouseButton1Click:Connect(function()
+				task.spawn(function()
+					clearEmergencyStop()
+					local ok, err = pcall(cb)
+					if not ok then
+						setStatus("ошибка кнопки")
+						notify("ошибка кнопки: " .. tostring(err))
+					end
+				end)
+			end)
+		end
+
+		makeBtn(L("btn_tp_pickup", "ТП -> PICKUP"), 1, function()
+			teleportToWaypoint("pickup", {
+				footMode = "elevated",
+				instant = true,
+				useSavedY = true,
+				skipVehicleStabilize = true,
+			})
+		end, "btn_tp_pickup")
+		makeBtn(L("btn_tp_dropoff", "ТП -> DROPOFF"), 2, function()
+			teleportToWaypoint("dropoff", {
+				footMode = "elevated",
+				instant = true,
+				useSavedY = true,
+				skipVehicleStabilize = true,
+			})
+		end, "btn_tp_dropoff")
+		makeBtn(L("btn_tp_foot", "ТП -> FOOT"), 3, function()
+			teleportToWaypoint("footZone", {
+				footMode = "elevated",
+				instant = true,
+				useSavedY = true,
+				skipVehicleStabilize = true,
+			})
+		end, "btn_tp_foot")
+	end)
 end
 
 local function mountFeaturesBuiltin(deps, ctx)
