@@ -4,7 +4,7 @@
 
 local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
 local PLACE_ID = 14502598369
-local BUILD = "v0.14.8"
+local BUILD = "v0.14.9"
 
 local Players = game:GetService("Players")
 local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
@@ -531,6 +531,7 @@ Locale.TEXT = {
 		btn_fling_soft = "Fling: Мягкий",
 		btn_fling_user = "Fling: Твой",
 		btn_fling_ultra = "Fling: Ультра",
+		status_ready = "готов",
 	},
 	en = {
 		title_hint = "RightShift — hide",
@@ -595,6 +596,7 @@ Locale.TEXT = {
 		btn_fling_soft = "Fling: Soft",
 		btn_fling_user = "Fling: Your",
 		btn_fling_ultra = "Fling: Ultra",
+		status_ready = "Ready",
 	},
 }
 
@@ -2051,7 +2053,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.8"
+local BUILD = "v0.14.9"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -2365,9 +2367,44 @@ local function getRootPart(char)
 	return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
 end
 
+local function normalizeLang(lang)
+	if type(lang) == "string" and lang:lower() == "en" then
+		return "en"
+	end
+	return "ru"
+end
+
+local function trRuntime(key, fallback)
+	local mod = loadOptionalModule("modules/locale.lua")
+	if type(mod) == "table" and type(mod.t) == "function" then
+		local ok, text = pcall(mod.t, normalizeLang(Config.uiLanguage), key, fallback)
+		if ok and type(text) == "string" and text ~= "" then
+			return text
+		end
+	end
+	return fallback or key
+end
+
+local STATUS_TEXT_TO_KEY = {
+	["готов"] = "status_ready",
+}
+
+local function localizeStatusText(text)
+	if type(text) ~= "string" then
+		return text
+	end
+	local key = STATUS_TEXT_TO_KEY[text]
+	if key then
+		return trRuntime(key, text)
+	end
+	return text
+end
+
 local function setStatus(text)
 	State.status = text
-	if statusValueLabel and statusValueLabel.Parent then statusValueLabel.Text = text end
+	if statusValueLabel and statusValueLabel.Parent then
+		statusValueLabel.Text = localizeStatusText(text)
+	end
 end
 
 local function setPhase(text)
@@ -2491,7 +2528,7 @@ local function loadConfig()
 end
 
 local function refreshWaypointLabels()
-	local notSetText = "не задан"
+	local notSetText = trRuntime("value_not_set", "не задан")
 	if pickupValueLabel and pickupValueLabel.Parent then
 		local wp = Config.waypoints.pickup
 		pickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
@@ -4872,7 +4909,7 @@ local function mountMain(ctx)
 	mountAdaptivePanel(makeHalfHolder(topRow, 1), L("panel_status", "Статус"), 200, nil, "panel_status", function(statusPanel)
 		statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
 		phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
-		statusValueLabel.Text = State.status
+		statusValueLabel.Text = localizeStatusText(State.status)
 		phaseValueLabel.Text = State.phase
 	end)
 
@@ -5448,6 +5485,19 @@ local function mountSettings(ctx)
 	}, ctx)
 end
 
+function M.getUiLanguage()
+	return normalizeLang(Config.uiLanguage)
+end
+
+function M.setUiLanguage(lang)
+	Config.uiLanguage = normalizeLang(lang)
+	saveConfig()
+	if statusValueLabel and statusValueLabel.Parent then
+		statusValueLabel.Text = localizeStatusText(State.status)
+	end
+	refreshWaypointLabels()
+end
+
 function M.stop()
 	emergencyStopRequested = true
 	mounted = false
@@ -5668,6 +5718,7 @@ local LOCALE_FALLBACK = {
 		btn_fling_soft = "Fling: Мягкий",
 		btn_fling_user = "Fling: Твой",
 		btn_fling_ultra = "Fling: Ультра",
+		status_ready = "готов",
 	},
 	en = {
 		title_hint = "RightShift — hide",
@@ -5732,6 +5783,7 @@ local LOCALE_FALLBACK = {
 		btn_fling_soft = "Fling: Soft",
 		btn_fling_user = "Fling: Your",
 		btn_fling_ultra = "Fling: Ultra",
+		status_ready = "Ready",
 	},
 }
 

@@ -66,6 +66,7 @@ Locale.TEXT = {
 		btn_fling_soft = "Fling: Мягкий",
 		btn_fling_user = "Fling: Твой",
 		btn_fling_ultra = "Fling: Ультра",
+		status_ready = "готов",
 	},
 	en = {
 		title_hint = "RightShift — hide",
@@ -130,6 +131,7 @@ Locale.TEXT = {
 		btn_fling_soft = "Fling: Soft",
 		btn_fling_user = "Fling: Your",
 		btn_fling_ultra = "Fling: Ultra",
+		status_ready = "Ready",
 	},
 }
 
