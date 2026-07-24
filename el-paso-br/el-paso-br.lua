@@ -4,7 +4,7 @@
 
 local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
 local PLACE_ID = 14502598369
-local BUILD = "v0.14.0"
+local BUILD = "v0.14.1"
 
 local Players = game:GetService("Players")
 local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
@@ -1466,7 +1466,7 @@ local M = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.14.0"
+local BUILD = "v0.14.1"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -4327,30 +4327,45 @@ local function mountMain(ctx)
 	local registerLocale = ctx.registerLocale
 
 	local scroll = makeScrollPage(page)
-	local content = Instance.new("Frame")
-	content.Size = UDim2.new(1, 0, 0, 1040)
-	content.BackgroundTransparency = 1
-	content.LayoutOrder = 1
-	content.Parent = scroll
+	local wrap = ui.makeListWrap and ui.makeListWrap(scroll) or scroll
 
-	local statusPanel = makeFlowPanel(content, L("panel_status", "Статус"), 200, 200, 0, 0, nil, "panel_status")
+	local function makeHost(order, height)
+		local host = Instance.new("Frame")
+		host.Size = UDim2.new(1, 0, 0, height)
+		host.BackgroundTransparency = 1
+		host.LayoutOrder = order
+		host.Parent = wrap
+		return host
+	end
+
+	local topHost = makeHost(1, 200)
+	local statusPanel = makeFlowPanel(topHost, L("panel_status", "Статус"), 206, 200, 0, 0, nil, "panel_status")
 	statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
 	phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
 	statusValueLabel.Text = State.status
 	phaseValueLabel.Text = State.phase
 
-	local points = makeFlowPanel(content, L("panel_points", "Точки"), 200, 200, 216, 0, 35, "panel_points")
+	local points = makeFlowPanel(topHost, L("panel_points", "Точки"), 206, 200, 214, 0, 35, "panel_points")
 	pickupValueLabel = makeStatRow(points, L("stat_pickup", "PICKUP"), 1, "stat_pickup")
 	dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
 	footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
 	cargoValueLabel = makeStatRow(points, L("stat_cargo", "Груз"), 4, "stat_cargo")
 	refreshWaypointLabels()
 
-	local cargoPanel = makeFlowPanel(content, L("panel_cargo", "Выбор груза"), 420, 160, 0, 224, 40, "panel_cargo")
+	local cargoHost = makeHost(2, 166)
+	local cargoPanel = makeFlowPanel(cargoHost, L("panel_cargo", "Выбор груза"), 420, 166, 0, 0, 40, "panel_cargo")
 	local cargoRow = Instance.new("Frame")
 	cargoRow.Size = UDim2.new(1, 0, 0, 106)
 	cargoRow.BackgroundTransparency = 1
+	cargoRow.LayoutOrder = 1
 	cargoRow.Parent = cargoPanel
+
+	local cargoGrid = Instance.new("UIGridLayout")
+	cargoGrid.CellSize = UDim2.new(0, 198, 0, 28)
+	cargoGrid.CellPadding = UDim2.new(0, 6, 0, 6)
+	cargoGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	cargoGrid.SortOrder = Enum.SortOrder.LayoutOrder
+	cargoGrid.Parent = cargoRow
 
 	local cargoBtns = {}
 	local function getCargoIndex(items, itemName)
@@ -4375,17 +4390,15 @@ local function mountMain(ctx)
 		end
 	end
 	for i, name in ipairs(CARGO_ITEMS) do
-		local bx = ((i - 1) % 2) * 206
-		local by = math.floor((i - 1) / 2) * 34
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(0, 198, 0, 28)
-		btn.Position = UDim2.new(0, bx, 0, by)
 		btn.BackgroundColor3 = COLORS.panel
 		btn.BorderSizePixel = 0
 		btn.Font = Enum.Font.Gotham
 		btn.TextSize = 10
 		btn.TextColor3 = COLORS.text
 		btn.Text = name
+		btn.LayoutOrder = i
 		btn.Parent = cargoRow
 		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 6) c.Parent = btn
 		btn:SetAttribute("CargoName", name)
@@ -4413,7 +4426,8 @@ local function mountMain(ctx)
 	end
 	refreshCargoBtns()
 
-	local ctrl = makeFlowPanel(content, L("panel_cycle", "Телепорт и цикл"), 420, 248, 0, 392, 40, "panel_cycle")
+	local ctrlHost = makeHost(3, 178)
+	local ctrl = makeFlowPanel(ctrlHost, L("panel_cycle", "Телепорт и цикл"), 420, 178, 0, 0, 40, "panel_cycle")
 	makeFlowToggle(ctrl, L("toggle_auto_smuggle", "Авто контрабанда (цикл)"), Config.autoSmuggle, function(v)
 		Config.autoSmuggle = v
 		if v then
@@ -4433,21 +4447,28 @@ local function mountMain(ctx)
 	end, 1, nil, "toggle_auto_smuggle")
 
 	local btnRow = Instance.new("Frame")
-	btnRow.Size = UDim2.new(1, 0, 0, 74)
+	btnRow.Size = UDim2.new(1, 0, 0, 36)
 	btnRow.BackgroundTransparency = 1
 	btnRow.LayoutOrder = 2
 	btnRow.Parent = ctrl
 
-	local function makeBtn(text, x, y, w, cb, localeKey)
+	local btnGrid = Instance.new("UIGridLayout")
+	btnGrid.CellSize = UDim2.new(0, 128, 0, 30)
+	btnGrid.CellPadding = UDim2.new(0, 8, 0, 6)
+	btnGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	btnGrid.SortOrder = Enum.SortOrder.LayoutOrder
+	btnGrid.Parent = btnRow
+
+	local function makeBtn(text, order, cb, localeKey)
 		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0, w, 0, 30)
-		b.Position = UDim2.new(0, x, 0, y)
+		b.Size = UDim2.new(0, 128, 0, 30)
 		b.BackgroundColor3 = COLORS.accentSoft
 		b.BorderSizePixel = 0
 		b.Font = Enum.Font.GothamSemibold
 		b.TextSize = 10
 		b.TextColor3 = COLORS.text
 		b.Text = text
+		b.LayoutOrder = order
 		b.Parent = btnRow
 		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = b
 		if type(registerLocale) == "function" and localeKey then
@@ -4465,7 +4486,7 @@ local function mountMain(ctx)
 		end)
 	end
 
-	makeBtn(L("btn_tp_pickup", "ТП -> PICKUP"), 0, 0, 128, function()
+	makeBtn(L("btn_tp_pickup", "ТП -> PICKUP"), 1, function()
 		teleportToWaypoint("pickup", {
 			footMode = "elevated",
 			instant = true,
@@ -4473,7 +4494,7 @@ local function mountMain(ctx)
 			skipVehicleStabilize = true,
 		})
 	end, "btn_tp_pickup")
-	makeBtn(L("btn_tp_dropoff", "ТП -> DROPOFF"), 136, 0, 128, function()
+	makeBtn(L("btn_tp_dropoff", "ТП -> DROPOFF"), 2, function()
 		teleportToWaypoint("dropoff", {
 			footMode = "elevated",
 			instant = true,
@@ -4481,7 +4502,7 @@ local function mountMain(ctx)
 			skipVehicleStabilize = true,
 		})
 	end, "btn_tp_dropoff")
-	makeBtn(L("btn_tp_foot", "ТП -> FOOT"), 0, 34, 128, function()
+	makeBtn(L("btn_tp_foot", "ТП -> FOOT"), 3, function()
 		teleportToWaypoint("footZone", {
 			footMode = "elevated",
 			instant = true,
@@ -4823,6 +4844,136 @@ local localeBindings = {}
 local localeLib
 local uiLanguage = "ru"
 local CONFIG_FILE = "el-paso-br-config.json"
+local LOCALE_FALLBACK = {
+	ru = {
+		title_hint = "RightShift — скрыть",
+		hide_hint = "RightShift — открыть меню",
+		tab_teleport = "Телепорт",
+		tab_teleport_sub = "Контрабанда · точки",
+		tab_features = "Функции",
+		tab_features_sub = "Noclip · ESP · машина",
+		tab_settings = "Настройки",
+		tab_settings_sub = "ТП ног · буст",
+		tab_credits = "Кредиты",
+		tab_credits_sub = "О проекте",
+		credits_about = "MAXI HUB | El Paso Border Roleplay",
+		tg_button = "Telegram канал",
+		tg_copied = "Скопировано!",
+		panel_status = "Статус",
+		stat_state = "Состояние",
+		stat_phase = "Фаза",
+		panel_points = "Точки",
+		stat_pickup = "PICKUP",
+		stat_dropoff = "DROPOFF",
+		stat_foot = "FOOT",
+		stat_cargo = "Груз",
+		panel_cargo = "Выбор груза",
+		panel_cycle = "Телепорт и цикл",
+		toggle_auto_smuggle = "Авто контрабанда (цикл)",
+		btn_tp_pickup = "ТП -> PICKUP",
+		btn_tp_dropoff = "ТП -> DROPOFF",
+		btn_tp_foot = "ТП -> FOOT",
+		value_not_set = "не задан",
+		sec_main = "основное",
+		toggle_esp_players = "ESP игроков",
+		toggle_noclip_foot = "Постоянный noclip (ноги)",
+		toggle_noclip_vehicle = "Постоянный noclip (машина)",
+		toggle_prompt_zero = "Убрать задержку E (везде)",
+		sec_vehicle_opt = "машина (опц.)",
+		toggle_vehicle_boost = "Буст машины",
+		toggle_vehicle_stop_s = "Мгновенный стоп на S",
+		toggle_vehicle_fling = "Fling по другим машинам (быстро)",
+		btn_vehicle_stop_now = "Остановить машину сейчас",
+		sec_map = "карта",
+		btn_delete_gates = "Удалить гейты НАМЕРТВО",
+		btn_gates_removed = "Гейты удалены",
+		sec_tp_foot = "телепорт ног",
+		slider_tp_step = "Длина шага ТП",
+		slider_tp_steps_per_frame = "Шагов за кадр",
+		slider_tp_height = "Высота полёта",
+		slider_tp_descend = "Замедление спуска",
+		slider_tp_hold = "Фиксация на точке (сек)",
+		slider_boost_max_speed = "Лимит скорости буста",
+		sec_fling_orbit = "флинг (орбита)",
+		slider_fling_orbit_speed = "Fling: скорость вращения",
+		slider_fling_fore_aft = "Fling: длина вперёд/назад",
+		slider_fling_side = "Fling: ширина орбиты",
+		slider_fling_height = "Fling: высота (ниже/выше)",
+		slider_fling_bob = "Fling: волна по высоте",
+		slider_fling_linear = "Fling: сила толчка",
+		slider_fling_spin = "Fling: сила вращения",
+		slider_fling_hold = "Fling: держать цель (сек)",
+		slider_fling_regrab = "Fling: пауза между целями",
+		slider_fling_ultra = "Fling: УЛЬТРА множитель",
+		btn_fling_soft = "Fling: Мягкий",
+		btn_fling_user = "Fling: Твой",
+		btn_fling_ultra = "Fling: Ультра",
+	},
+	en = {
+		title_hint = "RightShift — hide",
+		hide_hint = "RightShift — open menu",
+		tab_teleport = "Teleport",
+		tab_teleport_sub = "Smuggling · points",
+		tab_features = "Features",
+		tab_features_sub = "Noclip · ESP · vehicle",
+		tab_settings = "Settings",
+		tab_settings_sub = "Foot TP · boost",
+		tab_credits = "Credits",
+		tab_credits_sub = "About project",
+		credits_about = "MAXI HUB | El Paso Border Roleplay",
+		tg_button = "Telegram channel",
+		tg_copied = "Copied!",
+		panel_status = "Status",
+		stat_state = "State",
+		stat_phase = "Phase",
+		panel_points = "Points",
+		stat_pickup = "PICKUP",
+		stat_dropoff = "DROPOFF",
+		stat_foot = "FOOT",
+		stat_cargo = "Cargo",
+		panel_cargo = "Cargo selection",
+		panel_cycle = "Teleport and cycle",
+		toggle_auto_smuggle = "Auto smuggling (cycle)",
+		btn_tp_pickup = "TP -> PICKUP",
+		btn_tp_dropoff = "TP -> DROPOFF",
+		btn_tp_foot = "TP -> FOOT",
+		value_not_set = "not set",
+		sec_main = "main",
+		toggle_esp_players = "Player ESP",
+		toggle_noclip_foot = "Always noclip (foot)",
+		toggle_noclip_vehicle = "Always noclip (vehicle)",
+		toggle_prompt_zero = "Remove E hold delay (all)",
+		sec_vehicle_opt = "vehicle (opt.)",
+		toggle_vehicle_boost = "Vehicle boost",
+		toggle_vehicle_stop_s = "Instant stop on S",
+		toggle_vehicle_fling = "Fling other vehicles (fast)",
+		btn_vehicle_stop_now = "Stop vehicle now",
+		sec_map = "map",
+		btn_delete_gates = "Delete gates PERMANENTLY",
+		btn_gates_removed = "Gates deleted",
+		sec_tp_foot = "foot teleport",
+		slider_tp_step = "TP step length",
+		slider_tp_steps_per_frame = "Steps per frame",
+		slider_tp_height = "Flight height",
+		slider_tp_descend = "Descent slowdown",
+		slider_tp_hold = "Point hold (sec)",
+		slider_boost_max_speed = "Boost max speed",
+		sec_fling_orbit = "fling (orbit)",
+		slider_fling_orbit_speed = "Fling: orbit speed",
+		slider_fling_fore_aft = "Fling: fore/aft length",
+		slider_fling_side = "Fling: orbit width",
+		slider_fling_height = "Fling: height (lower/higher)",
+		slider_fling_bob = "Fling: vertical bob",
+		slider_fling_linear = "Fling: shove power",
+		slider_fling_spin = "Fling: spin power",
+		slider_fling_hold = "Fling: hold target (sec)",
+		slider_fling_regrab = "Fling: delay between targets",
+		slider_fling_ultra = "Fling: ULTRA multiplier",
+		btn_fling_soft = "Fling: Soft",
+		btn_fling_user = "Fling: Your",
+		btn_fling_ultra = "Fling: Ultra",
+	},
+}
 
 local function normalizeLanguage(lang)
 	return (type(lang) == "string" and lang:lower() == "en") and "en" or "ru"
@@ -4876,6 +5027,11 @@ local function L(key, fallback)
 		if ok and type(text) == "string" and text ~= "" then
 			return text
 		end
+	end
+	local langBucket = LOCALE_FALLBACK[uiLanguage] or LOCALE_FALLBACK.ru
+	local baseText = (langBucket and langBucket[key]) or (LOCALE_FALLBACK.ru and LOCALE_FALLBACK.ru[key])
+	if type(baseText) == "string" and baseText ~= "" then
+		return baseText
 	end
 	return fallback or key
 end
