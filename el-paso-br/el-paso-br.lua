@@ -4,7 +4,7 @@
 
 local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
 local PLACE_ID = 14502598369
-local BUILD = "v0.15.5"
+local BUILD = "v0.15.6"
 
 local Players = game:GetService("Players")
 local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
@@ -485,10 +485,10 @@ Locale.TEXT = {
 		panel_status = "Статус",
 		stat_state = "Состояние",
 		stat_phase = "Фаза",
-		panel_points = "Точки",
-		stat_pickup = "PICKUP",
-		stat_dropoff = "DROPOFF",
-		stat_foot = "FOOT",
+		panel_stats = "Статистика",
+		stat_cycles = "Кругов",
+		stat_sold = "Сдал",
+		stat_session_time = "Время",
 		stat_cargo = "Груз",
 		panel_cargo = "Выбор груза",
 		panel_cycle = "Телепорт и цикл",
@@ -550,10 +550,10 @@ Locale.TEXT = {
 		panel_status = "Status",
 		stat_state = "State",
 		stat_phase = "Phase",
-		panel_points = "Points",
-		stat_pickup = "PICKUP",
-		stat_dropoff = "DROPOFF",
-		stat_foot = "FOOT",
+		panel_stats = "Stats",
+		stat_cycles = "Cycles",
+		stat_sold = "Sold",
+		stat_session_time = "Time",
 		stat_cargo = "Cargo",
 		panel_cargo = "Cargo selection",
 		panel_cycle = "Teleport and cycle",
@@ -2055,7 +2055,7 @@ local F = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.15.5"
+local BUILD = "v0.15.6"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -2176,13 +2176,14 @@ local Config = {
 }
 
 local State = { status = "готов", phase = "idle" }
+local SessionStats = { cycles = 0, sold = 0, startedAt = 0 }
 
 local ctxRef = {}
 local statusValueLabel
 local phaseValueLabel
-local pickupValueLabel
-local dropoffValueLabel
-local footZoneValueLabel
+local cyclesValueLabel
+local soldValueLabel
+local sessionTimeValueLabel
 local cargoValueLabel
 
 local Players = game:GetService("Players")
@@ -2535,26 +2536,39 @@ function F.hookSession(evt)
 	end
 end
 
-function F.refreshWaypointLabels()
-	local notSetText = F.trRuntime("value_not_set", "не задан")
-	if pickupValueLabel and pickupValueLabel.Parent then
-		local wp = Config.waypoints.pickup
-		pickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+function F.formatSessionTime()
+	if SessionStats.startedAt <= 0 then
+		return "0:00"
 	end
-	if dropoffValueLabel and dropoffValueLabel.Parent then
-		local wp = Config.waypoints.dropoff
-		dropoffValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	local secs = math.max(0, math.floor(os.clock() - SessionStats.startedAt))
+	local mins = math.floor(secs / 60)
+	local secRem = secs % 60
+	return string.format("%d:%02d", mins, secRem)
+end
+
+function F.resetSessionStats()
+	SessionStats.cycles = 0
+	SessionStats.sold = 0
+	SessionStats.startedAt = os.clock()
+	F.refreshSessionStatsLabels()
+end
+
+function F.refreshSessionStatsLabels()
+	if cyclesValueLabel and cyclesValueLabel.Parent then
+		cyclesValueLabel.Text = tostring(SessionStats.cycles)
 	end
-	if footZoneValueLabel and footZoneValueLabel.Parent then
-		local wp = Config.waypoints.footZone
-		footZoneValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
+	if soldValueLabel and soldValueLabel.Parent then
+		soldValueLabel.Text = tostring(SessionStats.sold)
+	end
+	if sessionTimeValueLabel and sessionTimeValueLabel.Parent then
+		sessionTimeValueLabel.Text = F.formatSessionTime()
 	end
 	if cargoValueLabel and cargoValueLabel.Parent then
 		local cargoText = table.concat(F.getSelectedCargoItems(), ", ")
 		if #cargoText > 34 then
 			cargoText = cargoText:sub(1, 31) .. "..."
 		end
-		cargoValueLabel.Text = cargoText
+		cargoValueLabel.Text = cargoText ~= "" and cargoText or F.trRuntime("value_not_set", "не задан")
 	end
 end
 
@@ -4212,10 +4226,14 @@ function F.sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expectedR
 			(attempt <= 2) and PERF.sellConfirmTimeoutFast or 1.7
 		)
 		if sold then
+			SessionStats.sold += math.max(0, tonumber(removedTotal) or 0)
+			F.refreshSessionStatsLabels()
 			F.setStatus(string.format("продано: -%d, кейс:%d", removedTotal, briefcaseNow))
 			return true
 		end
 		if removedOk and removedTotal > 0 and attempt >= 2 then
+			SessionStats.sold += math.max(0, tonumber(removedTotal) or 0)
+			F.refreshSessionStatsLabels()
 			-- Иногда игра не даёт новый Briefcase при наличии старого; считаем продажу успешной по факту списания.
 			F.setStatus(string.format("продано: -%d (без нового кейса)", removedTotal))
 			return true
@@ -4655,6 +4673,8 @@ function F.runCargoPickupSequenceFoot()
 
 	F.setPhase("idle")
 	F.setStatus("цикл завершён")
+	SessionStats.cycles += 1
+	F.refreshSessionStatsLabels()
 	F.hookSession("cycle")
 	return true
 end
@@ -4672,6 +4692,7 @@ function F.runAutoSmuggleLoop()
 	F.applyPromptHoldZeroSweep()
 	F.stopThread("autoSmuggle")
 	F.startThread("autoSmuggle", function()
+		F.resetSessionStats()
 		F.hookSession("start")
 		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
 			Runtime.armPromptHoldZeroWindow(2.0)
@@ -4924,12 +4945,12 @@ function F.mountMain(ctx)
 		phaseValueLabel.Text = State.phase
 	end)
 
-	mountAdaptivePanel(makeHalfHolder(topRow, 2), L("panel_points", "Точки"), 200, 35, "panel_points", function(points)
-		pickupValueLabel = makeStatRow(points, L("stat_pickup", "PICKUP"), 1, "stat_pickup")
-		dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
-		footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
+	mountAdaptivePanel(makeHalfHolder(topRow, 2), L("panel_stats", "Статистика"), 200, 35, "panel_stats", function(points)
+		cyclesValueLabel = makeStatRow(points, L("stat_cycles", "Кругов"), 1, "stat_cycles")
+		soldValueLabel = makeStatRow(points, L("stat_sold", "Сдал"), 2, "stat_sold")
+		sessionTimeValueLabel = makeStatRow(points, L("stat_session_time", "Время"), 3, "stat_session_time")
 		cargoValueLabel = makeStatRow(points, L("stat_cargo", "Груз"), 4, "stat_cargo")
-		F.refreshWaypointLabels()
+		F.refreshSessionStatsLabels()
 	end)
 
 	local cargoHost = makeBlockHost(2, 166)
@@ -5001,7 +5022,7 @@ function F.mountMain(ctx)
 				Config.cargoItem = Config.cargoItems[1]
 				F.saveConfig()
 				refreshCargoBtns()
-				F.refreshWaypointLabels()
+				F.refreshSessionStatsLabels()
 			end)
 			table.insert(cargoBtns, btn)
 		end
@@ -5519,7 +5540,7 @@ function M.setUiLanguage(lang)
 	if statusValueLabel and statusValueLabel.Parent then
 		statusValueLabel.Text = F.localizeStatusText(State.status)
 	end
-	F.refreshWaypointLabels()
+	F.refreshSessionStatsLabels()
 end
 
 function M.stop()
@@ -5658,6 +5679,9 @@ function M.mount(ctx)
 		end
 		if Config.autoSmuggle then
 			F.hookSession("tick")
+			if SessionStats.startedAt > 0 and sessionTimeValueLabel and sessionTimeValueLabel.Parent then
+				sessionTimeValueLabel.Text = F.formatSessionTime()
+			end
 		end
 	end))
 
@@ -5699,10 +5723,10 @@ local LOCALE_FALLBACK = {
 		panel_status = "Статус",
 		stat_state = "Состояние",
 		stat_phase = "Фаза",
-		panel_points = "Точки",
-		stat_pickup = "PICKUP",
-		stat_dropoff = "DROPOFF",
-		stat_foot = "FOOT",
+		panel_stats = "Статистика",
+		stat_cycles = "Кругов",
+		stat_sold = "Сдал",
+		stat_session_time = "Время",
 		stat_cargo = "Груз",
 		panel_cargo = "Выбор груза",
 		panel_cycle = "Телепорт и цикл",
@@ -5764,10 +5788,10 @@ local LOCALE_FALLBACK = {
 		panel_status = "Status",
 		stat_state = "State",
 		stat_phase = "Phase",
-		panel_points = "Points",
-		stat_pickup = "PICKUP",
-		stat_dropoff = "DROPOFF",
-		stat_foot = "FOOT",
+		panel_stats = "Stats",
+		stat_cycles = "Cycles",
+		stat_sold = "Sold",
+		stat_session_time = "Time",
 		stat_cargo = "Cargo",
 		panel_cargo = "Cargo selection",
 		panel_cycle = "Teleport and cycle",
