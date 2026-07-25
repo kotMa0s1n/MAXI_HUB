@@ -28,6 +28,7 @@ foreach ($name in $names) {
 $allNames = $allNames | Sort-Object { $_.Length } -Descending
 foreach ($name in $allNames) {
     $text = [regex]::Replace($text, "(?<![\w.:])$name(?=\s*\()", "F.$name")
+    $text = [regex]::Replace($text, "(?<![\w.:])$name(?=\s*[,}\)])", "F.$name")
 }
 
 $text = $text -replace "F\.F\.", "F."

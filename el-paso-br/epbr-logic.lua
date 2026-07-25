@@ -6,7 +6,7 @@ local F = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.15.4"
+local BUILD = "v0.15.5"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -685,7 +685,7 @@ end
 
 function F.resetVehicleDriveState(vehicle)
 	local tune = nil
-	if type(getVehicleDriveTune) == "function" then
+	if type(F.getVehicleDriveTune) == "function" then
 		tune = F.getVehicleDriveTune(vehicle)
 	end
 	if tune then
@@ -2627,7 +2627,7 @@ function F.runAutoSmuggleLoop()
 		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
 			Runtime.armPromptHoldZeroWindow(2.0)
 			F.applyFirstPersonCamera()
-			local ok, cycleOk = pcall(runCargoPickupSequence)
+			local ok, cycleOk = pcall(F.runCargoPickupSequence)
 			if not ok then
 				F.setStatus("ошибка цикла: " .. tostring(cycleOk))
 				F.waitInterruptible(0.8)
@@ -2762,8 +2762,8 @@ function F.initEspApi()
 		Players = Players,
 		Workspace = Workspace,
 		Config = Config,
-		getLocalPlayer = getLocalPlayer,
-		trackConn = trackConn,
+		getLocalPlayer = F.getLocalPlayer,
+		trackConn = F.trackConn,
 	})
 	if not ok or type(api) ~= "table" then
 		return false
@@ -3266,7 +3266,7 @@ function F.shouldUseExternalUiModules()
 end
 
 function F.mountFeatures(ctx)
-	local extMount = mountFeaturesBuiltin
+	local extMount = F.mountFeaturesBuiltin
 	if F.shouldUseExternalUiModules() then
 		local mod = F.loadOptionalModule("modules/features-tab.lua")
 		if type(mod) == "function" then
@@ -3350,7 +3350,7 @@ function F.mountFeatures(ctx)
 end
 
 function F.mountSettings(ctx)
-	local extMount = mountSettingsBuiltin
+	local extMount = F.mountSettingsBuiltin
 	if F.shouldUseExternalUiModules() then
 		local mod = F.loadOptionalModule("modules/settings-tab.lua")
 		if type(mod) == "function" then
