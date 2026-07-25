@@ -1,8 +1,9 @@
 --[[ El Paso, Texas: Border Roleplay
-  Запуск:
-  loadstring(readfile("el-paso-br/RUN.lua"))()
+  Локально:
+    loadstring(readfile("el-paso-br/RUN.lua"))()
 
-  Авто-выгрузка при повторном запуске встроена в el-paso-br.lua
+  С GitHub (ничего не класть в workspace):
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/loader.lua"))()
 ]]
 
 if typeof(getgenv) == "function" and getgenv().EPBR_Stop then
@@ -162,17 +163,101 @@ do
 	end
 end
 
-local ROOT = "el-paso-br"
-local MAIN = ROOT .. "/el-paso-br.lua"
+local OFFICIAL_RAW = "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/"
+local CDN_RAW = "https://cdn.jsdelivr.net/gh/kotMa0s1n/MAXI_HUB@main/el-paso-br/"
+local MAIN_FILE = "el-paso-br.lua"
+local WORKSPACE_DIR = "el-paso-br"
 
-if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
-	warn("[EPBR] Нужен readfile/isfile в executor")
-	return
+local function getOfficialBases()
+	local bases = {}
+	if type(genv) == "table" and type(genv.EPBR_OfficialRaw) == "string" and genv.EPBR_OfficialRaw ~= "" then
+		table.insert(bases, genv.EPBR_OfficialRaw)
+	end
+	table.insert(bases, OFFICIAL_RAW)
+	table.insert(bases, CDN_RAW)
+	return bases
 end
 
-if not isfile(MAIN) then
-	warn("[EPBR] Нет файла: " .. MAIN)
-	return
+local function getMainPaths()
+	local paths = {}
+	if type(genv) == "table" and type(genv.EPBR_LocalRoot) == "string" and genv.EPBR_LocalRoot ~= "" then
+		table.insert(paths, genv.EPBR_LocalRoot .. "/" .. MAIN_FILE)
+	end
+	table.insert(paths, WORKSPACE_DIR .. "/" .. MAIN_FILE)
+	table.insert(paths, MAIN_FILE)
+	return paths
+end
+
+local function cacheBust()
+	local t = (typeof(os) == "table" and os.time and os.time()) or 0
+	local r = (typeof(math) == "table" and math.random and math.random(1000, 9999)) or 0
+	return tostring(t) .. tostring(r)
+end
+
+local function httpGet(url)
+	if typeof(game.HttpGet) == "function" then
+		local ok, body = pcall(game.HttpGet, url, true)
+		if ok and type(body) == "string" and body ~= "" then
+			return body
+		end
+		ok, body = pcall(game.HttpGet, url)
+		if ok and type(body) == "string" and body ~= "" then
+			return body
+		end
+	end
+	if typeof(request) == "function" then
+		local ok, res = pcall(function()
+			return request({ Url = url, Method = "GET" })
+		end)
+		if ok and type(res) == "table" and type(res.Body) == "string" and res.Body ~= "" then
+			return res.Body
+		end
+	end
+	return nil
+end
+
+local function isValidLua(src, label)
+	if type(src) ~= "string" or src == "" then
+		return false
+	end
+	return loadstring(src, label or "@el-paso-br") ~= nil
+end
+
+local function cacheMainSource(src)
+	if type(src) ~= "string" or src == "" then return end
+	if typeof(writefile) ~= "function" then return end
+	if typeof(makefolder) == "function" then
+		pcall(makefolder, WORKSPACE_DIR)
+	end
+	pcall(function()
+		writefile(WORKSPACE_DIR .. "/" .. MAIN_FILE, src)
+	end)
+end
+
+local function fetchMainSource()
+	local repoOnly = type(genv) == "table" and genv.EPBR_RepoOnly == true
+	local bust = cacheBust()
+
+	if not repoOnly and typeof(readfile) == "function" and typeof(isfile) == "function" then
+		for _, path in ipairs(getMainPaths()) do
+			if isfile(path) then
+				local src = readfile(path)
+				if isValidLua(src, "@" .. path) then
+					return src, "local:" .. path
+				end
+			end
+		end
+	end
+
+	for _, base in ipairs(getOfficialBases()) do
+		local src = httpGet(base .. MAIN_FILE .. "?v=" .. bust)
+		if isValidLua(src, "@el-paso-br.lua") then
+			cacheMainSource(src)
+			return src, "github:" .. base
+		end
+	end
+
+	return nil, nil
 end
 
 local loader = loadstring or load
@@ -181,13 +266,13 @@ if type(loader) ~= "function" then
 	return
 end
 
-print("[EPBR] -> " .. MAIN)
-
-local source = readfile(MAIN)
+local source, sourceTag = fetchMainSource()
 if type(source) ~= "string" or source == "" then
-	warn("[EPBR] Пустой файл: " .. MAIN)
+	warn("[EPBR] Не найден el-paso-br.lua (workspace или GitHub)")
 	return
 end
+
+print("[EPBR] -> " .. tostring(sourceTag or MAIN_FILE))
 
 local chunk, compileErr = loader(source, "@el-paso-br")
 if type(chunk) ~= "function" then
