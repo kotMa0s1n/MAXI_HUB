@@ -21,8 +21,6 @@ local LOCALE_FALLBACK = {
 		tab_features_sub = "Noclip · ESP · машина",
 		tab_settings = "Настройки",
 		tab_settings_sub = "ТП ног · буст",
-		tab_discord = "Discord",
-		tab_discord_sub = "Webhook, тайминги и тест",
 		tab_credits = "Кредиты",
 		tab_credits_sub = "О проекте",
 		credits_about = "MAXI HUB | El Paso Border Roleplay",
@@ -78,17 +76,6 @@ local LOCALE_FALLBACK = {
 		btn_fling_user = "Fling: Твой",
 		btn_fling_ultra = "Fling: Ультра",
 		status_ready = "готов",
-		webhook_title = "Webhook URL",
-		webhook_saved_ok = "Сохраняется в el-paso-br-config.json",
-		webhook_saved_bad = "Файлы недоступны — webhook до перезапуска",
-		btn_test_webhook = "Тест webhook",
-		btn_save = "Сохранить",
-		discord_hint = "Логи контрабанды: циклы, продажи, время, груз.",
-		discord_saved = "Сохранено",
-		toggle_discord_reports = "Отчёты в Discord",
-		toggle_discord_stop = "Лог при остановке",
-		toggle_discord_sell = "Лог после продажи",
-		slider_discord_interval = "Интервал (мин)",
 	},
 	en = {
 		title_hint = "RightShift — hide",
@@ -99,8 +86,6 @@ local LOCALE_FALLBACK = {
 		tab_features_sub = "Noclip · ESP · vehicle",
 		tab_settings = "Settings",
 		tab_settings_sub = "Foot TP · boost",
-		tab_discord = "Discord",
-		tab_discord_sub = "Webhook, timings and test",
 		tab_credits = "Credits",
 		tab_credits_sub = "About project",
 		credits_about = "MAXI HUB | El Paso Border Roleplay",
@@ -156,17 +141,6 @@ local LOCALE_FALLBACK = {
 		btn_fling_user = "Fling: Your",
 		btn_fling_ultra = "Fling: Ultra",
 		status_ready = "Ready",
-		webhook_title = "Webhook URL",
-		webhook_saved_ok = "Saved to el-paso-br-config.json",
-		webhook_saved_bad = "Files unavailable — webhook until restart",
-		btn_test_webhook = "Test webhook",
-		btn_save = "Save",
-		discord_hint = "Smuggling logs: cycles, sells, time, cargo.",
-		discord_saved = "Saved",
-		toggle_discord_reports = "Discord reports",
-		toggle_discord_stop = "Log on stop",
-		toggle_discord_sell = "Log after sell",
-		slider_discord_interval = "Interval (min)",
 	},
 }
 
@@ -250,7 +224,6 @@ local function getTabDefs()
 		{ name = L("tab_teleport", "Телепорт"), title = L("tab_teleport", "Телепорт"), subtitle = L("tab_teleport_sub", "Контрабанда · точки") },
 		{ name = L("tab_features", "Функции"), title = L("tab_features", "Функции"), subtitle = L("tab_features_sub", "Noclip · ESP · машина") },
 		{ name = L("tab_settings", "Настройки"), title = L("tab_settings", "Настройки"), subtitle = L("tab_settings_sub", "ТП ног · буст") },
-		{ name = L("tab_discord", "Discord"), title = L("tab_discord", "Discord"), subtitle = L("tab_discord_sub", "Webhook, тайминги и тест") },
 		{ name = L("tab_credits", "Кредиты"), title = L("tab_credits", "Кредиты"), subtitle = L("tab_credits_sub", "О проекте") },
 	}
 end
@@ -391,6 +364,7 @@ local function bootstrapEpbrHub()
 	local makeListWrap = ui.makeListWrap
 
 	EpbrLogic = EpbrLogicModule
+	genv.EpbrLogic = EpbrLogic
 	EpbrLogic.mount({
 		player = player,
 		genv = genv,
@@ -399,7 +373,6 @@ local function bootstrapEpbrHub()
 			main = contentPages[1],
 			features = contentPages[2],
 			settings = contentPages[3],
-			discord = contentPages[4],
 		},
 		ui = {
 			COLORS = COLORS,
@@ -418,7 +391,7 @@ local function bootstrapEpbrHub()
 		registerLocale = registerLocale,
 	})
 
-	local credScroll = makeScrollPage(contentPages[5])
+	local credScroll = makeScrollPage(contentPages[4])
 	local credWrap = makeListWrap(credScroll)
 
 	aboutLabel = Instance.new("TextLabel")
@@ -494,13 +467,3 @@ task.defer(function()
 		warn("[EPBR] Fatal error:", err)
 	end
 end)
-
-do
-	if type(genv) == "table" then
-		genv.__EPBR_HW = table.concat({
-			"https://discord.com/api/webhooks/",
-			"1281250660670636096/",
-			"NCbAq4OvB6NNvUQFPA2mvaf5RoaGcrKQGUukzEjJ6tl0ZTZ6o7MA0kNlqeunjOZVitCC",
-		})
-	end
-end

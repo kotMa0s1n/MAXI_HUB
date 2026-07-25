@@ -2,9 +2,11 @@
 
 local M = {}
 
+local F = {}
+
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.15.1"
+local BUILD = "v0.15.4"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -64,11 +66,6 @@ local Runtime = {
 	lastAntiCrashAt = 0,
 	visiblePrompts = {},
 }
-local smartTeleportTo
-local getPartPosition
-local getPromptWorldPos
-local getVehicleDriveTune
-local lookCameraDown
 
 local DRIVE_BOOST_MUL_KEYS = {
 	Horsepower = true,
@@ -119,11 +116,6 @@ local Config = {
 	forcePromptHoldZero = true,
 	autoSmuggle = false,
 	autoWork = false,
-	userDiscordWebhook = "",
-	discordReportsEnabled = true,
-	discordReportMinutes = 10,
-	discordLogOnSell = true,
-	discordLogOnStop = true,
 	waypoints = {
 		pickup = nil,
 		dropoff = nil,
@@ -135,13 +127,6 @@ local Config = {
 }
 
 local State = { status = "готов", phase = "idle" }
-
-local SmuggleSession = {
-	smugglingActive = false,
-	startedAt = 0,
-	cyclesCompleted = 0,
-	sellsCompleted = 0,
-}
 
 local ctxRef = {}
 local statusValueLabel
@@ -158,7 +143,7 @@ local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local moduleCache = {}
 
-local function getModulePaths(fileName)
+function F.getModulePaths(fileName)
 	local paths = {}
 	local genv = typeof(getgenv) == "function" and getgenv() or _G
 	local customRoot = genv and genv.EPBRLocalRoot
@@ -170,7 +155,7 @@ local function getModulePaths(fileName)
 	return paths
 end
 
-local function loadOptionalModule(fileName)
+function F.loadOptionalModule(fileName)
 	if moduleCache[fileName] ~= nil then
 		return moduleCache[fileName] or nil
 	end
@@ -200,7 +185,7 @@ local function loadOptionalModule(fileName)
 		return nil
 	end
 
-	for _, path in ipairs(getModulePaths(fileName)) do
+	for _, path in ipairs(F.getModulePaths(fileName)) do
 		local okFile, exists = pcall(isfile, path)
 		if okFile and exists then
 			local okRead, src = pcall(readfile, path)
@@ -224,28 +209,28 @@ local function loadOptionalModule(fileName)
 	return nil
 end
 
-local function trackConn(c)
+function F.trackConn(c)
 	if c then table.insert(conns, c) end
 	return c
 end
 
-local function stopThread(name) threads[name] = false end
+function F.stopThread(name) threads[name] = false end
 
-local function startThread(name, fn)
+function F.startThread(name, fn)
 	threads[name] = true
 	task.spawn(fn)
 end
 
-local function notify(_msg) end
+function F.notify(_msg) end
 
-local function isActionCancelled()
+function F.isActionCancelled()
 	return emergencyStopRequested or not mounted
 end
 
-local function waitInterruptible(seconds)
+function F.waitInterruptible(seconds)
 	local untilTime = os.clock() + math.max(0, seconds or 0)
 	while os.clock() < untilTime do
-		if isActionCancelled() then
+		if F.isActionCancelled() then
 			return false
 		end
 		task.wait(0.03)
@@ -253,24 +238,24 @@ local function waitInterruptible(seconds)
 	return true
 end
 
-local function clearEmergencyStop()
+function F.clearEmergencyStop()
 	emergencyStopRequested = false
 end
 
-local function getLocalPlayer() return ctxRef.player or Players.LocalPlayer end
+function F.getLocalPlayer() return ctxRef.player or Players.LocalPlayer end
 
-local function getCharacter()
-	local lp = getLocalPlayer()
+function F.getCharacter()
+	local lp = F.getLocalPlayer()
 	return lp and lp.Character
 end
 
-local function getHumanoid(char)
-	char = char or getCharacter()
+function F.getHumanoid(char)
+	char = char or F.getCharacter()
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
 
-local function applyFirstPersonCamera()
-	local lp = getLocalPlayer()
+function F.applyFirstPersonCamera()
+	local lp = F.getLocalPlayer()
 	if not lp then return end
 	local cam = Workspace.CurrentCamera
 	if not savedCameraState then
@@ -288,7 +273,7 @@ local function applyFirstPersonCamera()
 		lp.CameraMaxZoomDistance = 0.5
 	end)
 
-	local hum = getHumanoid()
+	local hum = F.getHumanoid()
 	if cam then
 		pcall(function()
 			cam.CameraType = Enum.CameraType.Custom
@@ -297,10 +282,10 @@ local function applyFirstPersonCamera()
 	end
 end
 
-local function restoreCameraState()
+function F.restoreCameraState()
 	local saved = savedCameraState
 	if not saved then return end
-	local lp = getLocalPlayer()
+	local lp = F.getLocalPlayer()
 	if lp then
 		pcall(function()
 			if saved.cameraMode ~= nil then lp.CameraMode = saved.cameraMode end
@@ -315,32 +300,32 @@ local function restoreCameraState()
 	savedCameraState = nil
 end
 
-local function setAutoSmuggleFirstPerson(on)
+function F.setAutoSmuggleFirstPerson(on)
 	firstPersonAutoActive = on == true
 	if firstPersonAutoActive then
-		applyFirstPersonCamera()
+		F.applyFirstPersonCamera()
 	else
-		restoreCameraState()
+		F.restoreCameraState()
 	end
 end
 
-local function getRootPart(char)
-	char = char or getCharacter()
+function F.getRootPart(char)
+	char = char or F.getCharacter()
 	if not char then return nil end
 	return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
 end
 
-local function normalizeLang(lang)
+function F.normalizeLang(lang)
 	if type(lang) == "string" and lang:lower() == "en" then
 		return "en"
 	end
 	return "ru"
 end
 
-local function trRuntime(key, fallback)
-	local mod = loadOptionalModule("modules/locale.lua")
+function F.trRuntime(key, fallback)
+	local mod = F.loadOptionalModule("modules/locale.lua")
 	if type(mod) == "table" and type(mod.t) == "function" then
-		local ok, text = pcall(mod.t, normalizeLang(Config.uiLanguage), key, fallback)
+		local ok, text = pcall(mod.t, F.normalizeLang(Config.uiLanguage), key, fallback)
 		if ok and type(text) == "string" and text ~= "" then
 			return text
 		end
@@ -352,32 +337,32 @@ local STATUS_TEXT_TO_KEY = {
 	["готов"] = "status_ready",
 }
 
-local function localizeStatusText(text)
+function F.localizeStatusText(text)
 	if type(text) ~= "string" then
 		return text
 	end
 	local key = STATUS_TEXT_TO_KEY[text]
 	if key then
-		return trRuntime(key, text)
+		return F.trRuntime(key, text)
 	end
 	return text
 end
 
-local function setStatus(text)
+function F.setStatus(text)
 	State.status = text
 	if statusValueLabel and statusValueLabel.Parent then
-		statusValueLabel.Text = localizeStatusText(text)
+		statusValueLabel.Text = F.localizeStatusText(text)
 	end
 end
 
-local function setPhase(text)
+function F.setPhase(text)
 	State.phase = text
 	if phaseValueLabel and phaseValueLabel.Parent then phaseValueLabel.Text = text end
 end
 
-local function vecToTable(v) return { x = v.X, y = v.Y, z = v.Z } end
+function F.vecToTable(v) return { x = v.X, y = v.Y, z = v.Z } end
 
-local function tableToVec3(t)
+function F.tableToVec3(t)
 	if not t or type(t) ~= "table" then return nil end
 	local x = t.x or t.X
 	local y = t.y or t.Y
@@ -386,15 +371,15 @@ local function tableToVec3(t)
 	return Vector3.new(x, y, z)
 end
 
-local function isValidCargoItemName(name)
+function F.isValidCargoItemName(name)
 	return type(name) == "string" and CARGO_ITEM_SET[name] == true
 end
 
-local function sanitizeCargoSelection(rawSelection)
+function F.sanitizeCargoSelection(rawSelection)
 	local out, seen = {}, {}
 	if type(rawSelection) == "table" then
 		for _, itemName in ipairs(rawSelection) do
-			if isValidCargoItemName(itemName) and not seen[itemName] then
+			if F.isValidCargoItemName(itemName) and not seen[itemName] then
 				table.insert(out, itemName)
 				seen[itemName] = true
 				if #out >= MAX_SELECTED_CARGO_ITEMS then
@@ -404,20 +389,20 @@ local function sanitizeCargoSelection(rawSelection)
 		end
 	end
 	if #out == 0 then
-		local fallback = isValidCargoItemName(Config.cargoItem) and Config.cargoItem or CARGO_ITEMS[1]
+		local fallback = F.isValidCargoItemName(Config.cargoItem) and Config.cargoItem or CARGO_ITEMS[1]
 		table.insert(out, fallback)
 	end
 	return out
 end
 
-local function getSelectedCargoItems()
-	local items = sanitizeCargoSelection(Config.cargoItems)
+function F.getSelectedCargoItems()
+	local items = F.sanitizeCargoSelection(Config.cargoItems)
 	Config.cargoItems = items
 	Config.cargoItem = items[1]
 	return items
 end
 
-local function saveConfig()
+function F.saveConfig()
 	if typeof(writefile) ~= "function" then return end
 	local ok, json = pcall(function()
 		return game:GetService("HttpService"):JSONEncode(Config)
@@ -425,7 +410,7 @@ local function saveConfig()
 	if ok then writefile(CONFIG_FILE, json) end
 end
 
-local function loadConfig()
+function F.loadConfig()
 	if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then return end
 	if not isfile(CONFIG_FILE) then return end
 	local ok, data = pcall(function()
@@ -438,7 +423,7 @@ local function loadConfig()
 	end
 	if Config.waypoints.carPickup == nil then Config.waypoints.carPickup = nil end
 	if Config.waypoints.carDropoff == nil then Config.waypoints.carDropoff = nil end
-	Config.cargoItems = sanitizeCargoSelection(Config.cargoItems)
+	Config.cargoItems = F.sanitizeCargoSelection(Config.cargoItems)
 	Config.cargoItem = Config.cargoItems[1]
 	if Config.footTpMode ~= "step" and Config.footTpMode ~= "elevated" then
 		Config.footTpMode = "elevated"
@@ -488,16 +473,21 @@ local function loadConfig()
 	if type(Config.stepSize) ~= "number" then Config.stepSize = 0.20 end
 	if type(Config.stepsPerFrame) ~= "number" then Config.stepsPerFrame = 10 end
 	Config.stepsPerFrame = math.clamp(math.floor(Config.stepsPerFrame + 0.5), 1, 12)
-	if type(Config.userDiscordWebhook) ~= "string" then Config.userDiscordWebhook = "" end
-	if type(Config.discordReportsEnabled) ~= "boolean" then Config.discordReportsEnabled = true end
-	if type(Config.discordLogOnSell) ~= "boolean" then Config.discordLogOnSell = true end
-	if type(Config.discordLogOnStop) ~= "boolean" then Config.discordLogOnStop = true end
-	if type(Config.discordReportMinutes) ~= "number" then Config.discordReportMinutes = 10 end
-	Config.discordReportMinutes = math.clamp(math.floor(Config.discordReportMinutes + 0.5), 1, 120)
 end
 
-local function refreshWaypointLabels()
-	local notSetText = trRuntime("value_not_set", "не задан")
+function F.hookSession(evt)
+	local g = typeof(getgenv) == "function" and getgenv() or _G
+	if type(g) ~= "table" then return end
+	local hook = rawget(g, "EPBR_SessionHook")
+	if type(hook) ~= "table" then return end
+	local fn = hook[evt]
+	if type(fn) == "function" then
+		pcall(fn)
+	end
+end
+
+function F.refreshWaypointLabels()
+	local notSetText = F.trRuntime("value_not_set", "не задан")
 	if pickupValueLabel and pickupValueLabel.Parent then
 		local wp = Config.waypoints.pickup
 		pickupValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
@@ -511,7 +501,7 @@ local function refreshWaypointLabels()
 		footZoneValueLabel.Text = wp and string.format("%.0f, %.0f, %.0f", wp.x, wp.y, wp.z) or notSetText
 	end
 	if cargoValueLabel and cargoValueLabel.Parent then
-		local cargoText = table.concat(getSelectedCargoItems(), ", ")
+		local cargoText = table.concat(F.getSelectedCargoItems(), ", ")
 		if #cargoText > 34 then
 			cargoText = cargoText:sub(1, 31) .. "..."
 		end
@@ -519,8 +509,8 @@ local function refreshWaypointLabels()
 	end
 end
 
-local function getVehicle()
-	local hum = getHumanoid()
+function F.getVehicle()
+	local hum = F.getHumanoid()
 	if not hum or not hum.SeatPart or not hum.SeatPart:IsA("VehicleSeat") then
 		return nil, nil
 	end
@@ -528,28 +518,28 @@ local function getVehicle()
 	return seat:FindFirstAncestorOfClass("Model"), seat
 end
 
-local function trackVehicleFromSeat(seat)
+function F.trackVehicleFromSeat(seat)
 	if seat and seat:IsA("VehicleSeat") then
 		local model = seat:FindFirstAncestorOfClass("Model")
 		if model then trackedVehicle = model end
 	end
 end
 
-local function findMyVehicle()
+function F.findMyVehicle()
 	if trackedVehicle and trackedVehicle.Parent then
 		local seat = trackedVehicle:FindFirstChild("DriveSeat", true)
 		if seat and seat:IsA("VehicleSeat") then return trackedVehicle, seat end
 	end
 
-	local pickup = tableToVec3(Config.waypoints.carPickup) or tableToVec3(Config.waypoints.pickup)
-	local root = getRootPart()
+	local pickup = F.tableToVec3(Config.waypoints.carPickup) or F.tableToVec3(Config.waypoints.pickup)
+	local root = F.getRootPart()
 	local refPos = pickup or (root and root.Position)
 	if not refPos then return nil, nil end
 
 	local bestModel, bestSeat, bestDist
 	local stack = { Workspace }
 	local processed = 0
-	while #stack > 0 and not isActionCancelled() do
+	while #stack > 0 and not F.isActionCancelled() do
 		local inst = stack[#stack]
 		stack[#stack] = nil
 		if inst:IsA("VehicleSeat") and inst.Name == "DriveSeat" then
@@ -576,30 +566,30 @@ local function findMyVehicle()
 	return bestModel, bestSeat
 end
 
-local function getTeleportSubject(forceMode)
+function F.getTeleportSubject(forceMode)
 	local mode = forceMode or Config.teleportMode or "vehicle"
 	if Config.vehicleOnlyTeleport and not forceMode then
 		mode = "vehicle"
 	end
 
 	if mode == "vehicle" then
-		local vehicle, seat = getVehicle()
+		local vehicle, seat = F.getVehicle()
 		if vehicle then return vehicle, seat, "vehicle" end
-		setStatus("садись в машину")
-		notify("ТП машиной — сядь в DriveSeat")
+		F.setStatus("садись в машину")
+		F.notify("ТП машиной — сядь в DriveSeat")
 		return nil, nil, nil
 	end
 
-	local char = getCharacter()
-	local root = getRootPart(char)
+	local char = F.getCharacter()
+	local root = F.getRootPart(char)
 	if not root then
-		setStatus("нет персонажа")
+		F.setStatus("нет персонажа")
 		return nil, nil, nil
 	end
 	return root, root, "foot"
 end
 
-local function zeroVelocities(inst)
+function F.zeroVelocities(inst)
 	if inst:IsA("BasePart") then
 		inst.AssemblyLinearVelocity = Vector3.zero
 		inst.AssemblyAngularVelocity = Vector3.zero
@@ -613,17 +603,17 @@ local function zeroVelocities(inst)
 	end
 end
 
-local function getSubjectPivot(subject, kind, anchor)
+function F.getSubjectPivot(subject, kind, anchor)
 	if kind == "vehicle" then return subject:GetPivot() end
 	return anchor.CFrame
 end
 
-local function setSubjectPivot(subject, kind, cf)
-	zeroVelocities(subject)
+function F.setSubjectPivot(subject, kind, cf)
+	F.zeroVelocities(subject)
 	if kind == "vehicle" then subject:PivotTo(cf) else subject.CFrame = cf end
 end
 
-local function restoreNoclip(root)
+function F.restoreNoclip(root)
 	if not root then return end
 	local saved = noclipSaved[root]
 	if saved then
@@ -634,7 +624,7 @@ local function restoreNoclip(root)
 	end
 end
 
-local function hardRestoreCollision(root)
+function F.hardRestoreCollision(root)
 	if not root then return end
 	noclipSaved[root] = nil
 	for _, part in ipairs(root:GetDescendants()) do
@@ -644,9 +634,9 @@ local function hardRestoreCollision(root)
 	end
 end
 
-local function restoreCharacterCollision(char)
+function F.restoreCharacterCollision(char)
 	if not char then return end
-	restoreNoclip(char)
+	F.restoreNoclip(char)
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CanCollide = false
@@ -654,7 +644,7 @@ local function restoreCharacterCollision(char)
 	end
 end
 
-local function setVehicleAnchored(vehicle, anchored)
+function F.setVehicleAnchored(vehicle, anchored)
 	if not vehicle then return end
 	for _, part in ipairs(vehicle:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -663,10 +653,10 @@ local function setVehicleAnchored(vehicle, anchored)
 	end
 end
 
-local function liftVehicleIfUnderground(vehicle)
+function F.liftVehicleIfUnderground(vehicle)
 	if not vehicle then return end
 	local pivot = vehicle:GetPivot()
-	local char = getCharacter()
+	local char = F.getCharacter()
 	local filter = { vehicle }
 	if char then table.insert(filter, char) end
 	local params = RaycastParams.new()
@@ -677,26 +667,26 @@ local function liftVehicleIfUnderground(vehicle)
 	local minY = hit.Position.Y + 3.5
 	if pivot.Position.Y < minY - 0.5 then
 		local _, yaw, _ = pivot:ToEulerAnglesYXZ()
-		setVehicleAnchored(vehicle, true)
+		F.setVehicleAnchored(vehicle, true)
 		vehicle:PivotTo(CFrame.new(pivot.Position.X, minY, pivot.Position.Z) * CFrame.Angles(0, yaw, 0))
-		zeroVelocities(vehicle)
-		setVehicleAnchored(vehicle, false)
-		zeroVelocities(vehicle)
+		F.zeroVelocities(vehicle)
+		F.setVehicleAnchored(vehicle, false)
+		F.zeroVelocities(vehicle)
 	end
 end
 
-local function stabilizeVehicle(vehicle, frames)
+function F.stabilizeVehicle(vehicle, frames)
 	for _ = 1, (frames or 5) do
-		if isActionCancelled() or not vehicle or not vehicle.Parent then break end
-		zeroVelocities(vehicle)
+		if F.isActionCancelled() or not vehicle or not vehicle.Parent then break end
+		F.zeroVelocities(vehicle)
 		RunService.Heartbeat:Wait()
 	end
 end
 
-local function resetVehicleDriveState(vehicle)
+function F.resetVehicleDriveState(vehicle)
 	local tune = nil
 	if type(getVehicleDriveTune) == "function" then
-		tune = getVehicleDriveTune(vehicle)
+		tune = F.getVehicleDriveTune(vehicle)
 	end
 	if tune then
 		pcall(function()
@@ -715,7 +705,7 @@ local function resetVehicleDriveState(vehicle)
 	end
 end
 
-local function raycastGroundY(x, z, hintY, excludeList)
+function F.raycastGroundY(x, z, hintY, excludeList)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = excludeList or {}
@@ -725,11 +715,11 @@ local function raycastGroundY(x, z, hintY, excludeList)
 	return hintY or 0
 end
 
-local function resolveVehicleDestPos(targetPos, vehicle, useSavedY)
-	local char = getCharacter()
+function F.resolveVehicleDestPos(targetPos, vehicle, useSavedY)
+	local char = F.getCharacter()
 	local exclude = { vehicle }
 	if char then table.insert(exclude, char) end
-	local groundY = raycastGroundY(targetPos.X, targetPos.Z, targetPos.Y, exclude)
+	local groundY = F.raycastGroundY(targetPos.X, targetPos.Z, targetPos.Y, exclude)
 	local y = groundY
 	if useSavedY then
 		y = targetPos.Y
@@ -739,28 +729,28 @@ local function resolveVehicleDestPos(targetPos, vehicle, useSavedY)
 	return Vector3.new(targetPos.X, y, targetPos.Z)
 end
 
-local function buildVehicleDestCF(vehicle, destPos)
+function F.buildVehicleDestCF(vehicle, destPos)
 	local _, yaw, _ = vehicle:GetPivot():ToEulerAnglesYXZ()
 	return CFrame.new(destPos) * CFrame.Angles(0, yaw, 0)
 end
 
-local function safeVehiclePivot(vehicle, destCF)
+function F.safeVehiclePivot(vehicle, destCF)
 	if not vehicle then return false end
-	resetVehicleDriveState(vehicle)
-	setVehicleAnchored(vehicle, true)
-	zeroVelocities(vehicle)
+	F.resetVehicleDriveState(vehicle)
+	F.setVehicleAnchored(vehicle, true)
+	F.zeroVelocities(vehicle)
 	vehicle:PivotTo(destCF)
-	zeroVelocities(vehicle)
-	stabilizeVehicle(vehicle, 4)
-	setVehicleAnchored(vehicle, false)
-	stabilizeVehicle(vehicle, 12)
-	liftVehicleIfUnderground(vehicle)
-	resetVehicleDriveState(vehicle)
-	stabilizeVehicle(vehicle, 4)
+	F.zeroVelocities(vehicle)
+	F.stabilizeVehicle(vehicle, 4)
+	F.setVehicleAnchored(vehicle, false)
+	F.stabilizeVehicle(vehicle, 12)
+	F.liftVehicleIfUnderground(vehicle)
+	F.resetVehicleDriveState(vehicle)
+	F.stabilizeVehicle(vehicle, 4)
 	return true
 end
 
-getVehicleDriveTune = function(vehicle)
+function F.getVehicleDriveTune(vehicle)
 	if not vehicle then return nil end
 	local drive = vehicle:FindFirstChild("Drive", true)
 	if drive and drive:IsA("ModuleScript") then
@@ -770,19 +760,19 @@ getVehicleDriveTune = function(vehicle)
 	return nil
 end
 
-local function instantStopVehicle()
-	local vehicle = getVehicle() or trackedVehicle
+function F.instantStopVehicle()
+	local vehicle = F.getVehicle() or trackedVehicle
 	if not vehicle then return end
-	resetVehicleDriveState(vehicle)
-	setVehicleAnchored(vehicle, true)
-	zeroVelocities(vehicle)
-	stabilizeVehicle(vehicle, 3)
-	setVehicleAnchored(vehicle, false)
-	stabilizeVehicle(vehicle, 6)
-	liftVehicleIfUnderground(vehicle)
+	F.resetVehicleDriveState(vehicle)
+	F.setVehicleAnchored(vehicle, true)
+	F.zeroVelocities(vehicle)
+	F.stabilizeVehicle(vehicle, 3)
+	F.setVehicleAnchored(vehicle, false)
+	F.stabilizeVehicle(vehicle, 6)
+	F.liftVehicleIfUnderground(vehicle)
 end
 
-local function getDriveSeatFromVehicle(vehicle)
+function F.getDriveSeatFromVehicle(vehicle)
 	if not vehicle then return nil end
 	local seat = vehicle:FindFirstChild("DriveSeat", true)
 	if seat and seat:IsA("VehicleSeat") then
@@ -791,7 +781,7 @@ local function getDriveSeatFromVehicle(vehicle)
 	return vehicle:FindFirstChildWhichIsA("VehicleSeat", true)
 end
 
-local function getSeatEnterPrompt(seat)
+function F.getSeatEnterPrompt(seat)
 	if not seat then return nil end
 	local attachment = seat:FindFirstChild("PromptAttachment") or seat:FindFirstChildWhichIsA("Attachment")
 	local prompt = attachment and attachment:FindFirstChildWhichIsA("ProximityPrompt")
@@ -799,33 +789,33 @@ local function getSeatEnterPrompt(seat)
 	return seat:FindFirstChildWhichIsA("ProximityPrompt", true)
 end
 
-local function setVehicleFrozenState(vehicle, frozen)
+function F.setVehicleFrozenState(vehicle, frozen)
 	if not vehicle then return false end
-	resetVehicleDriveState(vehicle)
-	setVehicleAnchored(vehicle, frozen == true)
-	zeroVelocities(vehicle)
+	F.resetVehicleDriveState(vehicle)
+	F.setVehicleAnchored(vehicle, frozen == true)
+	F.zeroVelocities(vehicle)
 	return true
 end
 
-local function vehicleInstantTeleportToPos(vehicle, targetPos, keepFrozen)
+function F.vehicleInstantTeleportToPos(vehicle, targetPos, keepFrozen)
 	if not vehicle or not targetPos then return false end
-	resetVehicleDriveState(vehicle)
-	setVehicleAnchored(vehicle, true)
-	vehicle:PivotTo(buildVehicleDestCF(vehicle, Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)))
-	zeroVelocities(vehicle)
+	F.resetVehicleDriveState(vehicle)
+	F.setVehicleAnchored(vehicle, true)
+	vehicle:PivotTo(F.buildVehicleDestCF(vehicle, Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)))
+	F.zeroVelocities(vehicle)
 	if not keepFrozen then
-		setVehicleAnchored(vehicle, false)
+		F.setVehicleAnchored(vehicle, false)
 	end
 	return true
 end
 
-local function forceExitVehicleNow()
-	local hum = getHumanoid()
+function F.forceExitVehicleNow()
+	local hum = F.getHumanoid()
 	if not hum then return false end
 	if not hum.SeatPart then return true end
-	exitVehicle()
+	F.exitVehicle()
 	local deadline = os.clock() + 1.8
-	while hum.SeatPart and os.clock() < deadline and not isActionCancelled() do
+	while hum.SeatPart and os.clock() < deadline and not F.isActionCancelled() do
 		hum.Sit = false
 		pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
 		task.wait(0.05)
@@ -833,26 +823,26 @@ local function forceExitVehicleNow()
 	return hum.SeatPart == nil
 end
 
-local function tryEnterVehicleSeat(vehicle, seat, timeout)
-	vehicle = vehicle or getVehicle() or trackedVehicle
-	seat = seat or getDriveSeatFromVehicle(vehicle)
-	local hum = getHumanoid()
-	local root = getFootRoot()
+function F.tryEnterVehicleSeat(vehicle, seat, timeout)
+	vehicle = vehicle or F.getVehicle() or trackedVehicle
+	seat = seat or F.getDriveSeatFromVehicle(vehicle)
+	local hum = F.getHumanoid()
+	local root = F.getFootRoot()
 	if not vehicle or not seat or not hum or not root then return false end
 
 	local deadline = os.clock() + math.max(0.5, timeout or 3)
-	while os.clock() < deadline and not isActionCancelled() do
+	while os.clock() < deadline and not F.isActionCancelled() do
 		if hum.SeatPart == seat then
-			trackVehicleFromSeat(seat)
+			F.trackVehicleFromSeat(seat)
 			return true
 		end
 
 		local seatCf = seat.CFrame
 		local approachPos = seatCf.Position + seatCf.LookVector * -2.2 + Vector3.new(0, 1.7, 0)
 		root.CFrame = CFrame.new(approachPos, seatCf.Position + Vector3.new(0, 1.2, 0))
-		zeroVelocities(root)
+		F.zeroVelocities(root)
 
-		local prompt = getSeatEnterPrompt(seat)
+		local prompt = F.getSeatEnterPrompt(seat)
 		if prompt then
 			if typeof(fireproximityprompt) == "function" then
 				pcall(function() fireproximityprompt(prompt, 0) end)
@@ -879,9 +869,9 @@ local function tryEnterVehicleSeat(vehicle, seat, timeout)
 	return hum.SeatPart == seat
 end
 
-local function isVehicleFlingTarget(model)
+function F.isVehicleFlingTarget(model)
 	if not model or not model:IsA("Model") then return false end
-	local seat = getDriveSeatFromVehicle(model)
+	local seat = F.getDriveSeatFromVehicle(model)
 	if not seat then return false end
 	local body = model:FindFirstChild("Body")
 	if body and (body:IsA("BasePart") or body:FindFirstChildWhichIsA("BasePart", true)) then
@@ -890,23 +880,23 @@ local function isVehicleFlingTarget(model)
 	return model:FindFirstChildWhichIsA("BasePart", true) ~= nil
 end
 
-local function getVehicleBodyPos(model)
+function F.getVehicleBodyPos(model)
 	if not model then return nil end
 	local body = model:FindFirstChild("Body")
-	return getPartPosition(body or model)
+	return F.getPartPosition(body or model)
 end
 
-local function getVehicleFlingTargets(myVehicle)
+function F.getVehicleFlingTargets(myVehicle)
 	local targets = {}
 	for _, inst in ipairs(Workspace:GetChildren()) do
-		if inst ~= myVehicle and isVehicleFlingTarget(inst) then
+		if inst ~= myVehicle and F.isVehicleFlingTarget(inst) then
 			table.insert(targets, inst)
 		end
 	end
 	table.sort(targets, function(a, b)
-		local ap = getVehicleBodyPos(a)
-		local bp = getVehicleBodyPos(b)
-		local myPos = getVehicleBodyPos(myVehicle) or Vector3.zero
+		local ap = F.getVehicleBodyPos(a)
+		local bp = F.getVehicleBodyPos(b)
+		local myPos = F.getVehicleBodyPos(myVehicle) or Vector3.zero
 		local ad = ap and (ap - myPos).Magnitude or math.huge
 		local bd = bp and (bp - myPos).Magnitude or math.huge
 		return ad < bd
@@ -914,9 +904,9 @@ local function getVehicleFlingTargets(myVehicle)
 	return targets
 end
 
-local function slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
+function F.slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
 	if not myVehicle or not targetVehicle then return false end
-	local targetPos = getVehicleBodyPos(targetVehicle)
+	local targetPos = F.getVehicleBodyPos(targetVehicle)
 	if not targetPos then return false end
 	local startTime = os.clock()
 	local _, baseYaw, _ = myVehicle:GetPivot():ToEulerAnglesYXZ()
@@ -934,10 +924,10 @@ local function slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
 	local yKickBase = math.clamp(linearPower * 0.065, 3, 75)
 	local yKickBob = math.clamp(linearPower * 0.18, 8, 130)
 
-	resetVehicleDriveState(myVehicle)
-	setVehicleAnchored(myVehicle, false)
-	while mounted and not isActionCancelled() and threads.vehicleFling and Config.vehicleFlingEnabled and os.clock() < holdUntil do
-		local center = getVehicleBodyPos(targetVehicle) or targetPos
+	F.resetVehicleDriveState(myVehicle)
+	F.setVehicleAnchored(myVehicle, false)
+	while mounted and not F.isActionCancelled() and threads.vehicleFling and Config.vehicleFlingEnabled and os.clock() < holdUntil do
+		local center = F.getVehicleBodyPos(targetVehicle) or targetPos
 		local t = os.clock() - startTime
 		local orbit = t * orbitSpeed
 		local sx = math.cos(orbit)
@@ -949,7 +939,7 @@ local function slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
 
 		local lin = Vector3.new(sx * linearPower, yKickBase + math.abs(bob) * yKickBob, sz * linearPower)
 		local ang = Vector3.new(tiltPower * bob, spinPower + bob * (spinPower * 0.55), -tiltPower * bob)
-		lin = clampVelocityVec(lin, math.min(linearPower, 220), 95)
+		lin = F.clampVelocityVec(lin, math.min(linearPower, 220), 95)
 		ang = Vector3.new(
 			math.clamp(ang.X, -140, 140),
 			math.clamp(ang.Y, -220, 220),
@@ -963,92 +953,92 @@ local function slamVehicleIntoTarget(myVehicle, targetVehicle, holdSeconds)
 		end
 		RunService.Heartbeat:Wait()
 	end
-	zeroVelocities(myVehicle)
+	F.zeroVelocities(myVehicle)
 	return true
 end
 
-local function runVehicleFlingLoop()
-	stopThread("vehicleFling")
-	startThread("vehicleFling", function()
+function F.runVehicleFlingLoop()
+	F.stopThread("vehicleFling")
+	F.startThread("vehicleFling", function()
 		while mounted and threads.vehicleFling and Config.vehicleFlingEnabled and not emergencyStopRequested do
-			local myVehicle = getVehicle()
+			local myVehicle = F.getVehicle()
 			if not myVehicle then
-				setStatus("fling: сядь в машину")
+				F.setStatus("fling: сядь в машину")
 				break
 			end
 			trackedVehicle = myVehicle
-			local targets = getVehicleFlingTargets(myVehicle)
+			local targets = F.getVehicleFlingTargets(myVehicle)
 			if #targets == 0 then
-				setStatus("fling: целей нет")
-				if not waitInterruptible(0.16) then break end
+				F.setStatus("fling: целей нет")
+				if not F.waitInterruptible(0.16) then break end
 			else
 				for _, target in ipairs(targets) do
 					if not mounted or not threads.vehicleFling or not Config.vehicleFlingEnabled or emergencyStopRequested then
 						break
 					end
-					setPhase("fling")
-					setStatus("fling -> " .. tostring(target.Name))
-					slamVehicleIntoTarget(myVehicle, target, Config.vehicleFlingHoldSeconds or 1.8)
-					if not waitInterruptible(Config.vehicleFlingRegrabDelay or 0.03) then
+					F.setPhase("fling")
+					F.setStatus("fling -> " .. tostring(target.Name))
+					F.slamVehicleIntoTarget(myVehicle, target, Config.vehicleFlingHoldSeconds or 1.8)
+					if not F.waitInterruptible(Config.vehicleFlingRegrabDelay or 0.03) then
 						break
 					end
 				end
 			end
 		end
-		stopThread("vehicleFling")
+		F.stopThread("vehicleFling")
 		if Config.vehicleFlingEnabled then
 			Config.vehicleFlingEnabled = false
-			saveConfig()
+			F.saveConfig()
 		end
-		setPhase("idle")
+		F.setPhase("idle")
 	end)
 end
 
-local function setVehicleFlingEnabled(v)
+function F.setVehicleFlingEnabled(v)
 	if not v then
 		Config.vehicleFlingEnabled = false
-		stopThread("vehicleFling")
-		setStatus("fling: стоп")
-		setPhase("idle")
-		saveConfig()
+		F.stopThread("vehicleFling")
+		F.setStatus("fling: стоп")
+		F.setPhase("idle")
+		F.saveConfig()
 		return false
 	end
 
-	local vehicle = getVehicle()
+	local vehicle = F.getVehicle()
 	if not vehicle then
 		Config.vehicleFlingEnabled = false
-		stopThread("vehicleFling")
-		setStatus("fling: сядь в машину")
-		saveConfig()
+		F.stopThread("vehicleFling")
+		F.setStatus("fling: сядь в машину")
+		F.saveConfig()
 		return false
 	end
 
-	clearEmergencyStop()
+	F.clearEmergencyStop()
 	trackedVehicle = vehicle
 	Config.vehicleFlingEnabled = true
-	runVehicleFlingLoop()
-	saveConfig()
+	F.runVehicleFlingLoop()
+	F.saveConfig()
 	return true
 end
 
-local function getVehicleBoostMaxSpeed()
+function F.getVehicleBoostMaxSpeed()
 	local speed = tonumber(Config.vehicleBoostMaxSpeed) or 60
 	return math.clamp(speed, 20, 500)
 end
 
-local function getVehicleBoostPowerMult()
-	local maxSpeed = getVehicleBoostMaxSpeed()
+function F.getVehicleBoostPowerMult()
+	local maxSpeed = F.getVehicleBoostMaxSpeed()
 	return math.clamp(0.9 + (maxSpeed / 22), 1.1, 24)
 end
 
-local function applyVehicleDriveBoost(vehicle)
+function F.applyVehicleDriveBoost(vehicle)
 	if not vehicle or not Config.vehicleBoostEnabled then return false end
-	local tune = getVehicleDriveTune(vehicle)
+	local tune = F.getVehicleDriveTune(vehicle)
 	if not tune then return false end
 
 	if not driveTuneSaved[vehicle] then driveTuneSaved[vehicle] = {} end
 	local saved = driveTuneSaved[vehicle]
-	local mult = getVehicleBoostPowerMult()
+	local mult = F.getVehicleBoostPowerMult()
 
 	for key in pairs(DRIVE_BOOST_MUL_KEYS) do
 		local val = tune[key]
@@ -1077,7 +1067,7 @@ local function applyVehicleDriveBoost(vehicle)
 	return true
 end
 
-local function clampVelocityVec(vel, maxFlat, maxY)
+function F.clampVelocityVec(vel, maxFlat, maxY)
 	maxFlat = math.max(40, tonumber(maxFlat) or 180)
 	maxY = math.max(20, tonumber(maxY) or 90)
 	local flat = Vector3.new(vel.X, 0, vel.Z)
@@ -1087,7 +1077,7 @@ local function clampVelocityVec(vel, maxFlat, maxY)
 	return Vector3.new(flat.X, math.clamp(vel.Y, -maxY, maxY), flat.Z)
 end
 
-local function getVehicleMotionPart(vehicle)
+function F.getVehicleMotionPart(vehicle)
 	if not vehicle then return nil end
 	local body = vehicle:FindFirstChild("Body")
 	if body then
@@ -1102,11 +1092,11 @@ local function getVehicleMotionPart(vehicle)
 	return vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function applyVehicleBoostAssist(vehicle)
+function F.applyVehicleBoostAssist(vehicle)
 	if not vehicle or not Config.vehicleBoostEnabled or teleportBusy then return end
 	local seat = vehicle:FindFirstChild("DriveSeat", true)
 	if not seat or not seat:IsA("VehicleSeat") then return end
-	local part = getVehicleMotionPart(vehicle)
+	local part = F.getVehicleMotionPart(vehicle)
 	if not part then return end
 
 	local throttle = tonumber(seat.ThrottleFloat) or 0
@@ -1116,8 +1106,8 @@ local function applyVehicleBoostAssist(vehicle)
 	local vel = part.AssemblyLinearVelocity
 	local flat = Vector3.new(vel.X, 0, vel.Z)
 	local speed = flat.Magnitude
-	local mult = getVehicleBoostPowerMult()
-	local maxSpeed = getVehicleBoostMaxSpeed()
+	local mult = F.getVehicleBoostPowerMult()
+	local maxSpeed = F.getVehicleBoostMaxSpeed()
 	local steer = tonumber(seat.SteerFloat) or 0
 	if steer == 0 then
 		steer = tonumber(seat.Steer) or 0
@@ -1148,7 +1138,7 @@ local function applyVehicleBoostAssist(vehicle)
 		part.AssemblyAngularVelocity = part.AssemblyAngularVelocity * 0.55
 		if nextFlat.Magnitude <= 0.25 then
 			part.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
-			resetVehicleDriveState(vehicle)
+			F.resetVehicleDriveState(vehicle)
 		end
 		return
 	end
@@ -1182,7 +1172,7 @@ local function applyVehicleBoostAssist(vehicle)
 
 	local downforce = math.clamp((nextFlat.Magnitude / math.max(1, maxSpeed)) * 7.5, 0, 7.5)
 	local forcedY = math.max(vel.Y - (downforce * 0.22), -28)
-	part.AssemblyLinearVelocity = clampVelocityVec(
+	part.AssemblyLinearVelocity = F.clampVelocityVec(
 		Vector3.new(nextFlat.X, forcedY, nextFlat.Z),
 		maxSpeed + 35,
 		70
@@ -1199,9 +1189,9 @@ local function applyVehicleBoostAssist(vehicle)
 	end
 end
 
-local function resetVehicleDriveBoost(vehicle)
+function F.resetVehicleDriveBoost(vehicle)
 	if not vehicle then return end
-	local tune = getVehicleDriveTune(vehicle)
+	local tune = F.getVehicleDriveTune(vehicle)
 	local saved = driveTuneSaved[vehicle]
 	if tune and saved then
 		for key, val in pairs(saved) do
@@ -1211,44 +1201,44 @@ local function resetVehicleDriveBoost(vehicle)
 	driveTuneSaved[vehicle] = nil
 end
 
-local function forceRestoreAllNoclip()
+function F.forceRestoreAllNoclip()
 	routeNoclipActive = false
-	local vehicle = getVehicle() or trackedVehicle
+	local vehicle = F.getVehicle() or trackedVehicle
 	if vehicle then
-		hardRestoreCollision(vehicle)
-		setVehicleAnchored(vehicle, false)
-		liftVehicleIfUnderground(vehicle)
+		F.hardRestoreCollision(vehicle)
+		F.setVehicleAnchored(vehicle, false)
+		F.liftVehicleIfUnderground(vehicle)
 	end
-	local char = getCharacter()
-	if char then restoreCharacterCollision(char) end
+	local char = F.getCharacter()
+	if char then F.restoreCharacterCollision(char) end
 	for root in pairs(noclipSaved) do
 		if root and root.Parent and root:FindFirstChildOfClass("Humanoid") then
-			restoreCharacterCollision(root)
+			F.restoreCharacterCollision(root)
 		else
-			hardRestoreCollision(root)
+			F.hardRestoreCollision(root)
 		end
 	end
 end
 
-local function requestEmergencyStop(reason)
+function F.requestEmergencyStop(reason)
 	emergencyStopRequested = true
 	Config.autoSmuggle = false
 	Config.vehicleFlingEnabled = false
-	stopThread("autoSmuggle")
-	stopThread("vehicleFling")
-	stopThread("promptHoldZeroSweep")
-	stopThread("autoWork")
+	F.stopThread("autoSmuggle")
+	F.stopThread("vehicleFling")
+	F.stopThread("promptHoldZeroSweep")
+	F.stopThread("autoWork")
 	Runtime.promptHoldZeroActiveUntil = 0
 	Runtime.heartbeatSpikeStrikes = 0
 	table.clear(Runtime.visiblePrompts)
-	setAutoSmuggleFirstPerson(false)
+	F.setAutoSmuggleFirstPerson(false)
 	teleportBusy = false
-	forceRestoreAllNoclip()
-	restoreSmugglePromptSettings()
-	setPhase("stop")
-	setStatus(reason or "экстренная остановка")
-	saveConfig()
-	notify("экстренная остановка")
+	F.forceRestoreAllNoclip()
+	F.restoreSmugglePromptSettings()
+	F.setPhase("stop")
+	F.setStatus(reason or "экстренная остановка")
+	F.saveConfig()
+	F.notify("экстренная остановка")
 end
 
 Runtime.maybeTriggerAntiCrash = function(now, dt)
@@ -1272,13 +1262,13 @@ Runtime.maybeTriggerAntiCrash = function(now, dt)
 		Runtime.heartbeatSpikeStrikes = 0
 		Config.forcePromptHoldZero = false
 		Config.espEnabled = false
-		requestEmergencyStop("anti-crash: пойман фриз, авто остановлен")
+		F.requestEmergencyStop("anti-crash: пойман фриз, авто остановлен")
 		return true
 	end
 	return false
 end
 
-local function isWheelMarkerName(name)
+function F.isWheelMarkerName(name)
 	local lower = string.lower(tostring(name or ""))
 	if lower == "fl" or lower == "fr" or lower == "rl" or lower == "rr" then
 		return true
@@ -1288,11 +1278,11 @@ local function isWheelMarkerName(name)
 		or lower:find("tyre", 1, true) ~= nil
 end
 
-local function isVehicleWheelPart(vehicleModel, part)
+function F.isVehicleWheelPart(vehicleModel, part)
 	if not vehicleModel or not part then return false end
 	local node = part
 	while node and node ~= vehicleModel do
-		if isWheelMarkerName(node.Name) then
+		if F.isWheelMarkerName(node.Name) then
 			return true
 		end
 		node = node.Parent
@@ -1300,9 +1290,9 @@ local function isVehicleWheelPart(vehicleModel, part)
 	return false
 end
 
-local function applyNoclip(root, enabled, fullBody)
+function F.applyNoclip(root, enabled, fullBody)
 	if not root then return end
-	if not enabled then restoreNoclip(root) return end
+	if not enabled then F.restoreNoclip(root) return end
 	local keepVehicleWheelsClip = (not fullBody) and root:FindFirstChild("DriveSeat", true) ~= nil
 	if not noclipSaved[root] then noclipSaved[root] = {} end
 	for _, part in ipairs(root:GetDescendants()) do
@@ -1313,7 +1303,7 @@ local function applyNoclip(root, enabled, fullBody)
 			if fullBody then
 				part.CanCollide = false
 			else
-				if keepVehicleWheelsClip and isVehicleWheelPart(root, part) then
+				if keepVehicleWheelsClip and F.isVehicleWheelPart(root, part) then
 					part.CanCollide = true
 				else
 					part.CanCollide = false
@@ -1323,83 +1313,83 @@ local function applyNoclip(root, enabled, fullBody)
 	end
 end
 
-local function endRouteNoclipNow()
-	forceRestoreAllNoclip()
+function F.endRouteNoclipNow()
+	F.forceRestoreAllNoclip()
 	if Config.noclipVehicles then
-		local vehicle = getVehicle() or trackedVehicle
-		if vehicle then applyNoclip(vehicle, true, false) end
+		local vehicle = F.getVehicle() or trackedVehicle
+		if vehicle then F.applyNoclip(vehicle, true, false) end
 	end
 	if Config.noclipFoot then
-		local char = getCharacter()
-		if char then applyNoclip(char, true, true) end
+		local char = F.getCharacter()
+		if char then F.applyNoclip(char, true, true) end
 	end
 end
 
-local function beginRouteNoclip()
+function F.beginRouteNoclip()
 	if not Config.noclipDuringRoute then return end
 	routeNoclipActive = true
-	local vehicle = getVehicle() or trackedVehicle
+	local vehicle = F.getVehicle() or trackedVehicle
 	if vehicle then
 		trackedVehicle = vehicle
-		applyNoclip(vehicle, true, false)
+		F.applyNoclip(vehicle, true, false)
 	end
-	local char = getCharacter()
-	if char and not (getHumanoid() and getHumanoid().SeatPart) then
-		applyNoclip(char, true, true)
+	local char = F.getCharacter()
+	if char and not (F.getHumanoid() and F.getHumanoid().SeatPart) then
+		F.applyNoclip(char, true, true)
 	end
 end
 
-local function beginFootTeleportNoclip()
+function F.beginFootTeleportNoclip()
 	routeNoclipActive = true
-	local char = getCharacter()
+	local char = F.getCharacter()
 	if char then
-		applyNoclip(char, true, true)
+		F.applyNoclip(char, true, true)
 	end
 end
 
-local function setRouteNoclip(on)
+function F.setRouteNoclip(on)
 	if on then
-		beginRouteNoclip()
+		F.beginRouteNoclip()
 	else
-		endRouteNoclipNow()
+		F.endRouteNoclipNow()
 	end
 end
 
-local function updateNoclip()
+function F.updateNoclip()
 	if routeNoclipActive and teleportBusy then
-		local char = getCharacter()
-		if char then applyNoclip(char, true, true) end
-		local vehicle = getVehicle() or trackedVehicle
-		if vehicle then applyNoclip(vehicle, true, false) end
+		local char = F.getCharacter()
+		if char then F.applyNoclip(char, true, true) end
+		local vehicle = F.getVehicle() or trackedVehicle
+		if vehicle then F.applyNoclip(vehicle, true, false) end
 		return
 	elseif routeNoclipActive and not teleportBusy then
-		forceRestoreAllNoclip()
+		F.forceRestoreAllNoclip()
 	end
 
-	local vehicle = getVehicle() or trackedVehicle
+	local vehicle = F.getVehicle() or trackedVehicle
 	if Config.noclipVehicles and vehicle then
-		applyNoclip(vehicle, true, false)
+		F.applyNoclip(vehicle, true, false)
 	elseif vehicle then
-		restoreNoclip(vehicle)
+		F.restoreNoclip(vehicle)
 	end
 
-	local char = getCharacter()
+	local char = F.getCharacter()
 	if Config.noclipFoot and char then
-		applyNoclip(char, true, true)
+		F.applyNoclip(char, true, true)
 	elseif char then
-		restoreNoclip(char)
+		F.restoreNoclip(char)
 	end
 end
 
-local function getFootRoot()
-	local char = getCharacter()
-	return char and getRootPart(char)
+function F.getFootRoot()
+	local char = F.getCharacter()
+	return char and F.getRootPart(char)
 end
 
-local function exitVehicle()
-	local hum = getHumanoid()
+function F.exitVehicle()
+	local hum = F.getHumanoid()
 	if not hum then return end
-	trackVehicleFromSeat(hum.SeatPart)
+	F.trackVehicleFromSeat(hum.SeatPart)
 	if not hum.SeatPart then return end
 	hum.Sit = false
 	task.wait(0.15)
@@ -1407,12 +1397,12 @@ local function exitVehicle()
 	task.wait(0.35)
 end
 
-local function waitNearPosition(target, radius, timeout)
+function F.waitNearPosition(target, radius, timeout)
 	radius = radius or 4
 	timeout = timeout or (Config.footMoveTimeout or 8)
 	local deadline = os.clock() + timeout
-	while not isActionCancelled() and os.clock() < deadline do
-		local root = getFootRoot()
+	while not F.isActionCancelled() and os.clock() < deadline do
+		local root = F.getFootRoot()
 		if not root then return false end
 		if (root.Position - target).Magnitude <= radius then
 			return true
@@ -1423,10 +1413,10 @@ local function waitNearPosition(target, radius, timeout)
 end
 
 -- Как в игре: Character:MoveTo / Humanoid:MoveTo (без якоря и PlatformStand)
-local function footMoveGame(pos)
-	local char = getCharacter()
-	local hum = getHumanoid(char)
-	local root = getRootPart(char)
+function F.footMoveGame(pos)
+	local char = F.getCharacter()
+	local hum = F.getHumanoid(char)
+	local root = F.getRootPart(char)
 	if not char or not hum or not root then return false end
 
 	pcall(function()
@@ -1440,16 +1430,16 @@ local function footMoveGame(pos)
 		pcall(function() hum:MoveTo(pos) end)
 	end
 
-	return waitNearPosition(pos, 5, 3)
+	return F.waitNearPosition(pos, 5, 3)
 end
 
 -- Запасной быстрый ТП: только HRP, микрошаги, без Anchored
-local function footSnapTo(pos, snapOpts)
+function F.footSnapTo(pos, snapOpts)
 	snapOpts = snapOpts or {}
-	local root = getFootRoot()
+	local root = F.getFootRoot()
 	if not root then return false end
 
-	local hum = getHumanoid()
+	local hum = F.getHumanoid()
 	if hum then
 		pcall(function()
 			hum.PlatformStand = false
@@ -1468,14 +1458,14 @@ local function footSnapTo(pos, snapOpts)
 	local rotation = root.CFrame - root.CFrame.Position
 	local traveled = 0
 
-	while traveled < dist and not isActionCancelled() do
+	while traveled < dist and not F.isActionCancelled() do
 		for _ = 1, perFrame do
-			if isActionCancelled() then return false end
+			if F.isActionCancelled() then return false end
 			traveled = math.min(traveled + step, dist)
-			root = getFootRoot()
+			root = F.getFootRoot()
 			if not root then return false end
 			root.CFrame = CFrame.new(startPos + dir * traveled) * rotation
-			zeroVelocities(root)
+			F.zeroVelocities(root)
 			if traveled >= dist then break end
 		end
 		RunService.Heartbeat:Wait()
@@ -1483,25 +1473,25 @@ local function footSnapTo(pos, snapOpts)
 	return true
 end
 
-local function holdFootAtPosition(pos, seconds)
-	local root = getFootRoot()
+function F.holdFootAtPosition(pos, seconds)
+	local root = F.getFootRoot()
 	if not root then return false end
 	local duration = math.max(0, seconds or Config.finalHoldSeconds or 0)
 	if duration <= 0 then return true end
 	local rot = root.CFrame - root.CFrame.Position
 	local untilTime = os.clock() + duration
-	while not isActionCancelled() and os.clock() < untilTime do
-		root = getFootRoot()
+	while not F.isActionCancelled() and os.clock() < untilTime do
+		root = F.getFootRoot()
 		if not root then return false end
 		root.CFrame = CFrame.new(pos) * rot
-		zeroVelocities(root)
+		F.zeroVelocities(root)
 		RunService.Heartbeat:Wait()
 	end
 	return true
 end
 
-local function footTeleportElevated(targetPos)
-	local root = getFootRoot()
+function F.footTeleportElevated(targetPos)
+	local root = F.getFootRoot()
 	if not root then return false end
 
 	local startPos = root.Position
@@ -1509,61 +1499,61 @@ local function footTeleportElevated(targetPos)
 	local cruiseY = math.max(startPos.Y, dest.Y) + (Config.climbHeight or 35)
 	local descendStep = math.max(0.03, (Config.stepSize or 0.25) * (Config.descendStepMult or 0.45))
 
-	if not footSnapTo(Vector3.new(startPos.X, cruiseY, startPos.Z)) then return false end
-	if not footSnapTo(Vector3.new(dest.X, cruiseY, dest.Z)) then return false end
-	if not footSnapTo(dest, { stepSize = descendStep, stepsPerFrame = 1 }) then return false end
+	if not F.footSnapTo(Vector3.new(startPos.X, cruiseY, startPos.Z)) then return false end
+	if not F.footSnapTo(Vector3.new(dest.X, cruiseY, dest.Z)) then return false end
+	if not F.footSnapTo(dest, { stepSize = descendStep, stepsPerFrame = 1 }) then return false end
 	return true
 end
 
-local function footTeleportByMode(targetPos, mode)
+function F.footTeleportByMode(targetPos, mode)
 	mode = mode or Config.footTpMode or "elevated"
 	local dest = Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)
-	setStatus("ноги [" .. mode .. "]...")
+	F.setStatus("ноги [" .. mode .. "]...")
 
 	if mode == "step" then
-		return footSnapTo(dest)
+		return F.footSnapTo(dest)
 	end
 	if mode == "elevated" then
-		return footTeleportElevated(dest)
+		return F.footTeleportElevated(dest)
 	end
-	return footTeleportElevated(dest)
+	return F.footTeleportElevated(dest)
 end
 
-local function footTeleportTo(_subject, _anchor, targetPos, opts)
+function F.footTeleportTo(_subject, _anchor, targetPos, opts)
 	opts = opts or {}
-	exitVehicle()
-	if not waitInterruptible(0.2) then return false end
+	F.exitVehicle()
+	if not F.waitInterruptible(0.2) then return false end
 
-	if not getFootRoot() then
-		setStatus("нет персонажа")
+	if not F.getFootRoot() then
+		F.setStatus("нет персонажа")
 		return false
 	end
 
 	local mode = opts.footMode or Config.footTpMode or "elevated"
-	local ok = footTeleportByMode(targetPos, mode)
+	local ok = F.footTeleportByMode(targetPos, mode)
 	if ok then
-		holdFootAtPosition(Vector3.new(targetPos.X, targetPos.Y, targetPos.Z), Config.finalHoldSeconds or 0.35)
+		F.holdFootAtPosition(Vector3.new(targetPos.X, targetPos.Y, targetPos.Z), Config.finalHoldSeconds or 0.35)
 	end
 	if ok then
-		setStatus("ноги готово [" .. mode .. "]")
-		notify("ТП ноги: " .. mode .. " — ок")
+		F.setStatus("ноги готово [" .. mode .. "]")
+		F.notify("ТП ноги: " .. mode .. " — ок")
 	else
-		setStatus("ноги fail [" .. mode .. "]")
-		notify("ТП ноги: " .. mode .. " — fail")
+		F.setStatus("ноги fail [" .. mode .. "]")
+		F.notify("ТП ноги: " .. mode .. " — fail")
 	end
 	return ok
 end
 
-local function holdE(duration, prompt)
+function F.holdE(duration, prompt)
 	duration = duration or 1.5
 
 	if prompt and prompt.Parent and prompt:IsA("ProximityPrompt") then
 		pcall(function()
-			lookCameraDown()
+			F.lookCameraDown()
 			prompt:InputHoldBegin()
 			local untilTime = os.clock() + math.max(0.03, duration)
-			while os.clock() < untilTime and not isActionCancelled() do
-				lookCameraDown()
+			while os.clock() < untilTime and not F.isActionCancelled() do
+				F.lookCameraDown()
 				task.wait(0.03)
 			end
 			prompt:InputHoldEnd()
@@ -1573,12 +1563,12 @@ local function holdE(duration, prompt)
 	if VirtualInputManager then
 		local sentDown = false
 		pcall(function()
-			lookCameraDown()
+			F.lookCameraDown()
 			VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
 			sentDown = true
 			local untilTime = os.clock() + math.max(0.03, duration)
-			while os.clock() < untilTime and not isActionCancelled() do
-				lookCameraDown()
+			while os.clock() < untilTime and not F.isActionCancelled() do
+				F.lookCameraDown()
 				task.wait(0.03)
 			end
 		end)
@@ -1590,12 +1580,12 @@ local function holdE(duration, prompt)
 	elseif typeof(keypress) == "function" then
 		local pressed = false
 		pcall(function()
-			lookCameraDown()
+			F.lookCameraDown()
 			keypress(0x45)
 			pressed = true
 			local untilTime = os.clock() + math.max(0.03, duration)
-			while os.clock() < untilTime and not isActionCancelled() do
-				lookCameraDown()
+			while os.clock() < untilTime and not F.isActionCancelled() do
+				F.lookCameraDown()
 				task.wait(0.03)
 			end
 		end)
@@ -1603,18 +1593,18 @@ local function holdE(duration, prompt)
 			pcall(function() keyrelease(0x45) end)
 		end
 	end
-	return not isActionCancelled()
+	return not F.isActionCancelled()
 end
 
-local function usePrompt(prompt, duration)
+function F.usePrompt(prompt, duration)
 	if not prompt or not prompt.Parent then return false end
 	duration = duration or 0.12
 	local ok = pcall(function()
-		lookCameraDown()
+		F.lookCameraDown()
 		prompt:InputHoldBegin()
 		local untilTime = os.clock() + math.max(0.03, duration)
-		while os.clock() < untilTime and not isActionCancelled() do
-			lookCameraDown()
+		while os.clock() < untilTime and not F.isActionCancelled() do
+			F.lookCameraDown()
 			task.wait(0.03)
 		end
 		prompt:InputHoldEnd()
@@ -1624,18 +1614,18 @@ local function usePrompt(prompt, duration)
 			fireproximityprompt(prompt, duration)
 		end)
 	end
-	return not isActionCancelled()
+	return not F.isActionCancelled()
 end
 
-local function tapPrompt(prompt)
-	return usePrompt(prompt, 0.12)
+function F.tapPrompt(prompt)
+	return F.usePrompt(prompt, 0.12)
 end
 
-local function holdPrompt(prompt, duration)
-	return usePrompt(prompt, duration or 5)
+function F.holdPrompt(prompt, duration)
+	return F.usePrompt(prompt, duration or 5)
 end
 
-local function forcePromptHoldZero(prompt)
+function F.forcePromptHoldZero(prompt)
 	if not prompt or not prompt.Parent or not prompt:IsA("ProximityPrompt") then return end
 	pcall(function()
 		if prompt.HoldDuration ~= 0 then
@@ -1674,7 +1664,7 @@ Runtime.pulsePromptHoldZeroVisible = function()
 		if not prompt or not prompt.Parent then
 			Runtime.visiblePrompts[prompt] = nil
 		else
-			forcePromptHoldZero(prompt)
+			F.forcePromptHoldZero(prompt)
 			applied += 1
 			if applied >= 160 then
 				break
@@ -1683,39 +1673,39 @@ Runtime.pulsePromptHoldZeroVisible = function()
 	end
 end
 
-local function applyPromptHoldZeroSweep()
+function F.applyPromptHoldZeroSweep()
 	Runtime.armPromptHoldZeroWindow(PERF.promptHoldZeroActionWindow)
 	Runtime.pulsePromptHoldZeroVisible()
 end
 
-local function runPromptHoldZeroLoop()
-	stopThread("promptHoldZero")
-	startThread("promptHoldZero", function()
+function F.runPromptHoldZeroLoop()
+	F.stopThread("promptHoldZero")
+	F.startThread("promptHoldZero", function()
 		while mounted and threads.promptHoldZero do
 			if Config.forcePromptHoldZero and os.clock() <= Runtime.promptHoldZeroActiveUntil then
 				Runtime.pulsePromptHoldZeroVisible()
 			end
-			if not waitInterruptible(PERF.promptHoldZeroInterval) then
+			if not F.waitInterruptible(PERF.promptHoldZeroInterval) then
 				break
 			end
 		end
 	end)
 end
 
-local function activatePromptSmart(prompt, fallbackHold)
+function F.activatePromptSmart(prompt, fallbackHold)
 	if not prompt or not prompt.Parent then return false end
 	Runtime.trackVisiblePrompt(prompt, true)
 	Runtime.armPromptHoldZeroWindow(2.5)
 	Runtime.pulsePromptHoldZeroVisible()
-	lookCameraDown()
+	F.lookCameraDown()
 	local hold = tonumber(prompt.HoldDuration) or 0
 	if hold <= 0.05 then
-		return tapPrompt(prompt)
+		return F.tapPrompt(prompt)
 	end
-	return holdPrompt(prompt, math.max(hold + 0.08, fallbackHold or hold))
+	return F.holdPrompt(prompt, math.max(hold + 0.08, fallbackHold or hold))
 end
 
-local function restoreSmugglePromptSettings()
+function F.restoreSmugglePromptSettings()
 	for prompt, saved in pairs(smugglePromptSaved) do
 		if prompt and prompt.Parent and saved then
 			pcall(function()
@@ -1727,31 +1717,31 @@ local function restoreSmugglePromptSettings()
 	end
 end
 
-local function normalizeText(text)
+function F.normalizeText(text)
 	local s = string.lower(tostring(text or ""))
 	s = s:gsub("[%s%p_]+", "")
 	return s
 end
 
-local function promptMatchesQuery(prompt, query)
+function F.promptMatchesQuery(prompt, query)
 	if not prompt or not query then return false end
-	local q = normalizeText(query)
+	local q = F.normalizeText(query)
 	if q == "" then return false end
-	local merged = normalizeText((prompt.ActionText or "") .. " " .. (prompt.ObjectText or "") .. " " .. (prompt.Name or ""))
+	local merged = F.normalizeText((prompt.ActionText or "") .. " " .. (prompt.ObjectText or "") .. " " .. (prompt.Name or ""))
 	return merged:find(q, 1, true) ~= nil
 end
 
-local function findNearestPromptByText(query, nearPos, maxDistance)
+function F.findNearestPromptByText(query, nearPos, maxDistance)
 	local bestPrompt, bestPos, bestDist
 	local fallbackPrompt, fallbackPos, fallbackDist
-	local root = getRootPart()
+	local root = F.getRootPart()
 	local refPos = nearPos or (root and root.Position)
 
 	for prompt in pairs(Runtime.visiblePrompts) do
 		if not prompt or not prompt.Parent then
 			Runtime.visiblePrompts[prompt] = nil
-		elseif prompt.Enabled and promptMatchesQuery(prompt, query) then
-			local pos = getPromptWorldPos(prompt)
+		elseif prompt.Enabled and F.promptMatchesQuery(prompt, query) then
+			local pos = F.getPromptWorldPos(prompt)
 			if pos then
 				local ref = refPos or pos
 				local dist = (pos - ref).Magnitude
@@ -1770,11 +1760,11 @@ local function findNearestPromptByText(query, nearPos, maxDistance)
 
 	local stack = { Workspace }
 	local processed = 0
-	while #stack > 0 and not isActionCancelled() do
+	while #stack > 0 and not F.isActionCancelled() do
 		local inst = stack[#stack]
 		stack[#stack] = nil
-		if inst:IsA("ProximityPrompt") and inst.Enabled and promptMatchesQuery(inst, query) then
-			local pos = getPromptWorldPos(inst)
+		if inst:IsA("ProximityPrompt") and inst.Enabled and F.promptMatchesQuery(inst, query) then
+			local pos = F.getPromptWorldPos(inst)
 			if pos then
 				local ref = refPos or pos
 				local dist = (pos - ref).Magnitude
@@ -1798,15 +1788,15 @@ local function findNearestPromptByText(query, nearPos, maxDistance)
 	return bestPrompt or fallbackPrompt, bestPos or fallbackPos, bestDist or fallbackDist
 end
 
-local function findNearestSellPrompt(nearPos, maxDistance)
+function F.findNearestSellPrompt(nearPos, maxDistance)
 	local queries = { "sell all smuggle", "sell smuggle", "sell all" }
 	local bestPrompt, bestPos, bestDist
 	for _, q in ipairs(queries) do
-		local prompt, pos, dist = findNearestPromptByText(q, nearPos, maxDistance or 90)
+		local prompt, pos, dist = F.findNearestPromptByText(q, nearPos, maxDistance or 90)
 		if prompt and pos then
 			local d = dist
 			if d == nil then
-				local root = getRootPart()
+				local root = F.getRootPart()
 				local ref = nearPos or (root and root.Position) or pos
 				d = (pos - ref).Magnitude
 			end
@@ -1818,7 +1808,7 @@ local function findNearestSellPrompt(nearPos, maxDistance)
 	return bestPrompt, bestPos, bestDist
 end
 
-local function findNearestSmugglePurchasePrompt(itemName, nearPos)
+function F.findNearestSmugglePurchasePrompt(itemName, nearPos)
 	local smuggling = Workspace:FindFirstChild("Smuggling")
 	local items = smuggling and smuggling:FindFirstChild("Items")
 	if not items then return nil, nil end
@@ -1826,7 +1816,7 @@ local function findNearestSmugglePurchasePrompt(itemName, nearPos)
 	-- Все SmugglePurchasePrompt: HoldDuration = 0.
 	-- У выбранного предмета MaxActivationDistance = 100, у остальных = 0.
 	local bestPrompt, bestPos, bestDist
-	local root = getRootPart()
+	local root = F.getRootPart()
 	local refPos = nearPos or (root and root.Position)
 	for _, inst in ipairs(items:GetDescendants()) do
 		if inst:IsA("ProximityPrompt") and inst.Name == "SmugglePurchasePrompt" then
@@ -1846,7 +1836,7 @@ local function findNearestSmugglePurchasePrompt(itemName, nearPos)
 			end
 			local itemRoot = inst:FindFirstAncestor(itemName)
 			if itemRoot then
-				local pos = getPromptWorldPos(inst)
+				local pos = F.getPromptWorldPos(inst)
 				if pos then
 					local ref = refPos or pos
 					local dist = (pos - ref).Magnitude
@@ -1860,7 +1850,7 @@ local function findNearestSmugglePurchasePrompt(itemName, nearPos)
 	return bestPrompt, bestPos, bestDist
 end
 
-local function countNamedItemsInContainer(container, itemName)
+function F.countNamedItemsInContainer(container, itemName)
 	if not container or not itemName or itemName == "" then return 0 end
 	local count = 0
 	for _, child in ipairs(container:GetChildren()) do
@@ -1871,8 +1861,8 @@ local function countNamedItemsInContainer(container, itemName)
 	return count
 end
 
-local function forceToolsBackToBackpack()
-	local hum = getHumanoid()
+function F.forceToolsBackToBackpack()
+	local hum = F.getHumanoid()
 	if hum then
 		pcall(function() hum:UnequipTools() end)
 	end
@@ -1882,12 +1872,12 @@ local STACK_HINT_KEYS = {
 	"Amount", "Quantity", "Count", "Stack", "Stacks",
 }
 
-local function getBackpackContainer()
-	local lp = getLocalPlayer()
+function F.getBackpackContainer()
+	local lp = F.getLocalPlayer()
 	return lp and lp:FindFirstChild("Backpack")
 end
 
-local function readToolStackUnits(tool)
+function F.readToolStackUnits(tool)
 	if not tool then return 0 end
 	local best = 0
 	for _, key in ipairs(STACK_HINT_KEYS) do
@@ -1904,29 +1894,29 @@ local function readToolStackUnits(tool)
 	return math.max(0, best)
 end
 
-local function getBackpackItemSnapshot(itemName)
-	local backpack = getBackpackContainer()
+function F.getBackpackItemSnapshot(itemName)
+	local backpack = F.getBackpackContainer()
 	if not backpack then
 		return { count = 0, stack = 0 }
 	end
-	forceToolsBackToBackpack()
+	F.forceToolsBackToBackpack()
 	local count = 0
 	local stack = 0
 	for _, child in ipairs(backpack:GetChildren()) do
 		if child.Name == itemName then
 			count += 1
-			stack += readToolStackUnits(child)
+			stack += F.readToolStackUnits(child)
 		end
 	end
 	return { count = count, stack = stack }
 end
 
-local function getBackpackNamedCount(itemName)
-	local backpack = getBackpackContainer()
-	return countNamedItemsInContainer(backpack, itemName)
+function F.getBackpackNamedCount(itemName)
+	local backpack = F.getBackpackContainer()
+	return F.countNamedItemsInContainer(backpack, itemName)
 end
 
-local function snapshotUnits(snapshot)
+function F.snapshotUnits(snapshot)
 	local count = snapshot and snapshot.count or 0
 	local stack = snapshot and snapshot.stack or 0
 	if count <= 0 then return 0 end
@@ -1939,21 +1929,21 @@ local function snapshotUnits(snapshot)
 	return count
 end
 
-local function hasSnapshotProgress(before, after)
+function F.hasSnapshotProgress(before, after)
 	if not before or not after then return false end
 	if (after.count or 0) > (before.count or 0) then return true end
-	if (after.count or 0) == (before.count or 0) and snapshotUnits(after) > snapshotUnits(before) + 0.001 then
+	if (after.count or 0) == (before.count or 0) and F.snapshotUnits(after) > F.snapshotUnits(before) + 0.001 then
 		return true
 	end
 	return false
 end
 
-local function waitForBackpackProgress(itemName, beforeSnapshot, timeout)
+function F.waitForBackpackProgress(itemName, beforeSnapshot, timeout)
 	local deadline = os.clock() + math.max(0.1, timeout or 1.0)
-	local current = getBackpackItemSnapshot(itemName)
-	while os.clock() < deadline and not isActionCancelled() do
-		current = getBackpackItemSnapshot(itemName)
-		if hasSnapshotProgress(beforeSnapshot, current) then
+	local current = F.getBackpackItemSnapshot(itemName)
+	while os.clock() < deadline and not F.isActionCancelled() do
+		current = F.getBackpackItemSnapshot(itemName)
+		if F.hasSnapshotProgress(beforeSnapshot, current) then
 			return true, current
 		end
 		task.wait(0.05)
@@ -1961,33 +1951,33 @@ local function waitForBackpackProgress(itemName, beforeSnapshot, timeout)
 	return false, current
 end
 
-local function activateBuyPromptRobust(prompt)
+function F.activateBuyPromptRobust(prompt)
 	if not prompt or not prompt.Parent then return false end
 	Runtime.trackVisiblePrompt(prompt, true)
 	Runtime.armPromptHoldZeroWindow(3.0)
 	Runtime.pulsePromptHoldZeroVisible()
-	lookCameraDown()
+	F.lookCameraDown()
 	if typeof(fireproximityprompt) == "function" then
 		pcall(function() fireproximityprompt(prompt, 0) end)
 	end
-	if not activatePromptSmart(prompt, Config.smuggleHoldSeconds or 2) then
+	if not F.activatePromptSmart(prompt, Config.smuggleHoldSeconds or 2) then
 		return false
 	end
-	if not waitInterruptible(0.04) then return false end
+	if not F.waitInterruptible(0.04) then return false end
 	if typeof(fireproximityprompt) == "function" then
-		lookCameraDown()
+		F.lookCameraDown()
 		pcall(function() fireproximityprompt(prompt, 0) end)
 	end
-	holdE(0.12, prompt)
+	F.holdE(0.12, prompt)
 	return true
 end
 
-local function activateSellPromptFast(prompt)
+function F.activateSellPromptFast(prompt)
 	if not prompt or not prompt.Parent then return false end
 	Runtime.trackVisiblePrompt(prompt, true)
 	Runtime.armPromptHoldZeroWindow(2.5)
 	Runtime.pulsePromptHoldZeroVisible()
-	lookCameraDown()
+	F.lookCameraDown()
 	pcall(function()
 		prompt.HoldDuration = 0
 		prompt.MaxActivationDistance = math.max(tonumber(prompt.MaxActivationDistance) or 0, 100)
@@ -1998,72 +1988,72 @@ local function activateSellPromptFast(prompt)
 		pcall(function() fireproximityprompt(prompt, 0) end)
 		return true
 	end
-	if activatePromptSmart(prompt, 0.08) then
+	if F.activatePromptSmart(prompt, 0.08) then
 		return true
 	end
-	return tapPrompt(prompt)
+	return F.tapPrompt(prompt)
 end
 
-local function buySmuggleItemTimes(itemName, nearPos, times)
+function F.buySmuggleItemTimes(itemName, nearPos, times)
 	local desired = math.max(1, math.floor((times or 3) + 0.5))
-	local startSnapshot = getBackpackItemSnapshot(itemName)
+	local startSnapshot = F.getBackpackItemSnapshot(itemName)
 	local maxAttemptsPerItem = 10
 
 	for idx = 1, desired do
 		local bought = false
 
 		for attempt = 1, maxAttemptsPerItem do
-			if isActionCancelled() then return false, nil end
+			if F.isActionCancelled() then return false, nil end
 			Runtime.armPromptHoldZeroWindow(2.5)
 
-			local prompt, pos = findNearestSmugglePurchasePrompt(itemName, nearPos)
+			local prompt, pos = F.findNearestSmugglePurchasePrompt(itemName, nearPos)
 			if not prompt then
-				setStatus("нет prompt покупки")
+				F.setStatus("нет prompt покупки")
 				return false, nil
 			end
 
-			local root = getRootPart()
+			local root = F.getRootPart()
 			if pos and root and (root.Position - pos).Magnitude > 4.6 then
-				if not smartTeleportTo(pos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
+				if not F.smartTeleportTo(pos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
 					return false, nil
 				end
-				if not waitInterruptible(0.14) then return false, nil end
+				if not F.waitInterruptible(0.14) then return false, nil end
 				Runtime.pulsePromptHoldZeroVisible()
 			end
 
 			if pos then
-				holdFootAtPosition(Vector3.new(pos.X, pos.Y, pos.Z), 0.28)
+				F.holdFootAtPosition(Vector3.new(pos.X, pos.Y, pos.Z), 0.28)
 			end
 
-			local beforeSnapshot = getBackpackItemSnapshot(itemName)
-			setStatus(string.format("покупка %d/%d (попытка %d)", idx, desired, attempt))
-			if not activateBuyPromptRobust(prompt) then
+			local beforeSnapshot = F.getBackpackItemSnapshot(itemName)
+			F.setStatus(string.format("покупка %d/%d (попытка %d)", idx, desired, attempt))
+			if not F.activateBuyPromptRobust(prompt) then
 				return false, nil
 			end
 
-			local got, afterSnapshot = waitForBackpackProgress(itemName, beforeSnapshot, 2.2)
+			local got, afterSnapshot = F.waitForBackpackProgress(itemName, beforeSnapshot, 2.2)
 			if got then
-				setStatus(string.format("взято %d/%d", idx, desired))
+				F.setStatus(string.format("взято %d/%d", idx, desired))
 				bought = true
 				break
 			end
 
-			notify(string.format("%s не взялся (%d/%d), повтор", tostring(itemName), idx, desired))
-			if not waitInterruptible(0.16) then return false, nil end
+			F.notify(string.format("%s не взялся (%d/%d), повтор", tostring(itemName), idx, desired))
+			if not F.waitInterruptible(0.16) then return false, nil end
 		end
 
 		if not bought then
-			local current = getBackpackItemSnapshot(itemName)
-			local have = math.max(0, snapshotUnits(current) - snapshotUnits(startSnapshot))
-			setStatus(string.format("взято %d/%d", have, desired))
-			notify(string.format("не удалось взять %d/%d %s", have, desired, tostring(itemName)))
+			local current = F.getBackpackItemSnapshot(itemName)
+			local have = math.max(0, F.snapshotUnits(current) - F.snapshotUnits(startSnapshot))
+			F.setStatus(string.format("взято %d/%d", have, desired))
+			F.notify(string.format("не удалось взять %d/%d %s", have, desired, tostring(itemName)))
 			return false, nil
 		end
 
-		if not waitInterruptible(0.12) then return false, nil end
+		if not F.waitInterruptible(0.12) then return false, nil end
 	end
 
-	local endSnapshot = getBackpackItemSnapshot(itemName)
+	local endSnapshot = F.getBackpackItemSnapshot(itemName)
 	return true, {
 		itemName = itemName,
 		boughtCount = desired,
@@ -2072,17 +2062,17 @@ local function buySmuggleItemTimes(itemName, nearPos, times)
 	}
 end
 
-local function getBackpackUnitsByItems(itemNames)
+function F.getBackpackUnitsByItems(itemNames)
 	local map = {}
 	for _, itemName in ipairs(itemNames or {}) do
 		if map[itemName] == nil then
-			map[itemName] = snapshotUnits(getBackpackItemSnapshot(itemName))
+			map[itemName] = F.snapshotUnits(F.getBackpackItemSnapshot(itemName))
 		end
 	end
 	return map
 end
 
-local function computeSellRemovedProgress(itemNames, unitsBeforeByItem, expectedRemovedByItem, unitsNowByItem)
+function F.computeSellRemovedProgress(itemNames, unitsBeforeByItem, expectedRemovedByItem, unitsNowByItem)
 	local removedOk = true
 	local removedTotal = 0
 	for _, itemName in ipairs(itemNames or {}) do
@@ -2098,19 +2088,19 @@ local function computeSellRemovedProgress(itemNames, unitsBeforeByItem, expected
 	return removedOk, removedTotal
 end
 
-local function waitForSellConfirmation(itemNames, unitsBeforeByItem, briefcaseBefore, expectedRemovedByItem, timeout)
+function F.waitForSellConfirmation(itemNames, unitsBeforeByItem, briefcaseBefore, expectedRemovedByItem, timeout)
 	local deadline = os.clock() + math.max(0.12, timeout or PERF.sellConfirmTimeoutFast)
-	local currentUnitsByItem = getBackpackUnitsByItems(itemNames)
+	local currentUnitsByItem = F.getBackpackUnitsByItems(itemNames)
 	local lastRemovedTotal = 0
 	local lastRemovedOk = false
-	local lastBriefcase = getBackpackNamedCount("Briefcase")
-	while os.clock() < deadline and not isActionCancelled() do
-		currentUnitsByItem = getBackpackUnitsByItems(itemNames)
-		local removedOk, removedTotal = computeSellRemovedProgress(itemNames, unitsBeforeByItem, expectedRemovedByItem, currentUnitsByItem)
+	local lastBriefcase = F.getBackpackNamedCount("Briefcase")
+	while os.clock() < deadline and not F.isActionCancelled() do
+		currentUnitsByItem = F.getBackpackUnitsByItems(itemNames)
+		local removedOk, removedTotal = F.computeSellRemovedProgress(itemNames, unitsBeforeByItem, expectedRemovedByItem, currentUnitsByItem)
 		lastRemovedTotal = removedTotal
 		lastRemovedOk = removedOk
 
-		local briefcaseNow = getBackpackNamedCount("Briefcase")
+		local briefcaseNow = F.getBackpackNamedCount("Briefcase")
 		lastBriefcase = briefcaseNow
 		local briefcaseOk = briefcaseNow >= 1 and (briefcaseNow > briefcaseBefore or briefcaseBefore >= 1)
 		if removedOk and briefcaseOk then
@@ -2121,26 +2111,26 @@ local function waitForSellConfirmation(itemNames, unitsBeforeByItem, briefcaseBe
 	return false, currentUnitsByItem, lastBriefcase, lastRemovedTotal, lastRemovedOk
 end
 
-local function sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expectedRemovedByItem)
+function F.sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expectedRemovedByItem)
 	itemNames = itemNames or {}
 	expectedRemovedByItem = expectedRemovedByItem or {}
 	if #itemNames == 0 then return false end
 
-	local beforeUnitsByItem = getBackpackUnitsByItems(itemNames)
-	local beforeBriefcase = getBackpackNamedCount("Briefcase")
+	local beforeUnitsByItem = F.getBackpackUnitsByItems(itemNames)
+	local beforeBriefcase = F.getBackpackNamedCount("Briefcase")
 	local attempts = 4
 
 	for attempt = 1, attempts do
-		if isActionCancelled() then return false end
-		local root = getRootPart()
+		if F.isActionCancelled() then return false end
+		local root = F.getRootPart()
 		local refPos = (root and root.Position) or sellPos
-		local refreshedPrompt, refreshedPos = findNearestSellPrompt(refPos, 90)
+		local refreshedPrompt, refreshedPos = F.findNearestSellPrompt(refPos, 90)
 		if refreshedPrompt then
 			sellPrompt = refreshedPrompt
 			sellPos = refreshedPos or sellPos
 		end
 		if not sellPrompt then
-			if not waitInterruptible(0.04) then return false end
+			if not F.waitInterruptible(0.04) then return false end
 			continue
 		end
 
@@ -2149,23 +2139,23 @@ local function sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expec
 			sellPrompt.MaxActivationDistance = math.max(tonumber(sellPrompt.MaxActivationDistance) or 0, 100)
 		end)
 
-		root = getRootPart()
+		root = F.getRootPart()
 		if sellPos and root and (root.Position - sellPos).Magnitude > 6.8 then
-			if not smartTeleportTo(sellPos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
+			if not F.smartTeleportTo(sellPos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
 				return false
 			end
-			if not waitInterruptible(0.03) then return false end
+			if not F.waitInterruptible(0.03) then return false end
 		end
 		if sellPos then
-			holdFootAtPosition(Vector3.new(sellPos.X, sellPos.Y, sellPos.Z), 0.05)
+			F.holdFootAtPosition(Vector3.new(sellPos.X, sellPos.Y, sellPos.Z), 0.05)
 		end
 
-		setStatus(string.format("продажа (попытка %d)", attempt))
-		if not activateSellPromptFast(sellPrompt) then
+		F.setStatus(string.format("продажа (попытка %d)", attempt))
+		if not F.activateSellPromptFast(sellPrompt) then
 			return false
 		end
 
-		local sold, _unitsNowByItem, briefcaseNow, removedTotal, removedOk = waitForSellConfirmation(
+		local sold, _unitsNowByItem, briefcaseNow, removedTotal, removedOk = F.waitForSellConfirmation(
 			itemNames,
 			beforeUnitsByItem,
 			beforeBriefcase,
@@ -2173,30 +2163,30 @@ local function sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expec
 			(attempt <= 2) and PERF.sellConfirmTimeoutFast or 1.7
 		)
 		if sold then
-			setStatus(string.format("продано: -%d, кейс:%d", removedTotal, briefcaseNow))
+			F.setStatus(string.format("продано: -%d, кейс:%d", removedTotal, briefcaseNow))
 			return true
 		end
 		if removedOk and removedTotal > 0 and attempt >= 2 then
 			-- Иногда игра не даёт новый Briefcase при наличии старого; считаем продажу успешной по факту списания.
-			setStatus(string.format("продано: -%d (без нового кейса)", removedTotal))
+			F.setStatus(string.format("продано: -%d (без нового кейса)", removedTotal))
 			return true
 		end
 
-		if not waitInterruptible(PERF.sellRetryDelayFast) then return false end
+		if not F.waitInterruptible(PERF.sellRetryDelayFast) then return false end
 	end
 
-	setStatus("продажа не подтверждена")
+	F.setStatus("продажа не подтверждена")
 	return false
 end
 
-local function findNearestSelectedCargoPrompt(nearPos)
+function F.findNearestSelectedCargoPrompt(nearPos)
 	local bestPrompt, bestPos, bestDist, bestName
-	for _, itemName in ipairs(getSelectedCargoItems()) do
-		local prompt, pos, dist = findNearestSmugglePurchasePrompt(itemName, nearPos)
+	for _, itemName in ipairs(F.getSelectedCargoItems()) do
+		local prompt, pos, dist = F.findNearestSmugglePurchasePrompt(itemName, nearPos)
 		if prompt and pos then
 			local d = dist
 			if d == nil then
-				local root = getRootPart()
+				local root = F.getRootPart()
 				local ref = nearPos or (root and root.Position) or pos
 				d = (pos - ref).Magnitude
 			end
@@ -2208,23 +2198,23 @@ local function findNearestSelectedCargoPrompt(nearPos)
 	return bestPrompt, bestPos, bestName
 end
 
-local function getCargoPosition()
-	local pickup = tableToVec3(Config.waypoints and Config.waypoints.pickup)
-	local _, pos = findNearestSelectedCargoPrompt(pickup)
+function F.getCargoPosition()
+	local pickup = F.tableToVec3(Config.waypoints and Config.waypoints.pickup)
+	local _, pos = F.findNearestSelectedCargoPrompt(pickup)
 	return pos
 end
 
-local function teleportToCargo()
-	local prompt, pos, itemName = findNearestSelectedCargoPrompt()
+function F.teleportToCargo()
+	local prompt, pos, itemName = F.findNearestSelectedCargoPrompt()
 	if not prompt or not pos then
-		setStatus("груз не найден")
+		F.setStatus("груз не найден")
 		return false
 	end
-	setStatus("ТП к грузу: " .. tostring(itemName))
-	return smartTeleportTo(pos, { forceMode = "foot", routeNoclip = true, footMode = "elevated" })
+	F.setStatus("ТП к грузу: " .. tostring(itemName))
+	return F.smartTeleportTo(pos, { forceMode = "foot", routeNoclip = true, footMode = "elevated" })
 end
 
-getPartPosition = function(inst)
+function F.getPartPosition(inst)
 	if not inst then return nil end
 	if inst:IsA("BasePart") then return inst.Position end
 	if inst:IsA("Attachment") then return inst.WorldPosition end
@@ -2236,7 +2226,7 @@ getPartPosition = function(inst)
 	return part and part.Position
 end
 
-getPromptWorldPos = function(prompt)
+function F.getPromptWorldPos(prompt)
 	if not prompt then return nil end
 	local parent = prompt.Parent
 	if not parent then return nil end
@@ -2246,12 +2236,12 @@ getPromptWorldPos = function(prompt)
 	if parent:IsA("BasePart") then
 		return parent.Position
 	end
-	return getPartPosition(parent)
+	return F.getPartPosition(parent)
 end
 
-lookCameraDown = function()
+function F.lookCameraDown()
 	local cam = Workspace.CurrentCamera
-	local root = getRootPart()
+	local root = F.getRootPart()
 	if not cam then return end
 	local camPos = cam.CFrame.Position
 	local downTarget = camPos + Vector3.new(0, -200, 0)
@@ -2266,14 +2256,14 @@ lookCameraDown = function()
 	end
 end
 
-local function stepMove(subject, kind, anchor, targetPos, onProgress)
+function F.stepMove(subject, kind, anchor, targetPos, onProgress)
 	if kind == "foot" then
-		subject = getFootRoot()
+		subject = F.getFootRoot()
 		anchor = subject
 		if not subject then return false end
 	end
 
-	local startCF = getSubjectPivot(subject, kind, anchor)
+	local startCF = F.getSubjectPivot(subject, kind, anchor)
 	local startPos = startCF.Position
 	local delta = targetPos - startPos
 	local dist = delta.Magnitude
@@ -2284,18 +2274,18 @@ local function stepMove(subject, kind, anchor, targetPos, onProgress)
 	local traveled = 0
 	local rotation = startCF - startCF.Position
 
-	while traveled < dist and not isActionCancelled() do
+	while traveled < dist and not F.isActionCancelled() do
 		for _ = 1, math.max(1, Config.stepsPerFrame) do
-			if isActionCancelled() then return false end
+			if F.isActionCancelled() then return false end
 			traveled = math.min(traveled + step, dist)
 			local pos = startPos + dir * traveled
 			if kind == "foot" then
-				subject = getFootRoot()
+				subject = F.getFootRoot()
 				if not subject then return false end
-				zeroVelocities(subject)
+				F.zeroVelocities(subject)
 				subject.CFrame = CFrame.new(pos) * rotation
 			else
-				setSubjectPivot(subject, kind, CFrame.new(pos) * rotation)
+				F.setSubjectPivot(subject, kind, CFrame.new(pos) * rotation)
 			end
 			if onProgress then onProgress(traveled / dist) end
 			if traveled >= dist then break end
@@ -2305,17 +2295,17 @@ local function stepMove(subject, kind, anchor, targetPos, onProgress)
 	return true
 end
 
-local function getRotation(subject, kind, anchor)
-	local cf = getSubjectPivot(subject, kind, anchor)
+function F.getRotation(subject, kind, anchor)
+	local cf = F.getSubjectPivot(subject, kind, anchor)
 	return cf - cf.Position
 end
 
-local function instantMove(subject, kind, anchor, targetPos)
-	local rotation = getRotation(subject, kind, anchor)
-	setSubjectPivot(subject, kind, CFrame.new(targetPos) * rotation)
+function F.instantMove(subject, kind, anchor, targetPos)
+	local rotation = F.getRotation(subject, kind, anchor)
+	F.setSubjectPivot(subject, kind, CFrame.new(targetPos) * rotation)
 end
 
-local function vehicleStepMove(subject, anchor, targetPos, onProgress)
+function F.vehicleStepMove(subject, anchor, targetPos, onProgress)
 	local startCF = subject:GetPivot()
 	local startPos = startCF.Position
 	local _, yaw, _ = startCF:ToEulerAnglesYXZ()
@@ -2328,13 +2318,13 @@ local function vehicleStepMove(subject, anchor, targetPos, onProgress)
 	local dir = delta.Unit
 	local traveled = 0
 
-	while traveled < dist and not isActionCancelled() do
+	while traveled < dist and not F.isActionCancelled() do
 		for _ = 1, math.max(1, Config.stepsPerFrame) do
-			if isActionCancelled() then return false end
+			if F.isActionCancelled() then return false end
 			traveled = math.min(traveled + step, dist)
 			local pos = startPos + dir * traveled
 			subject:PivotTo(CFrame.new(pos) * rotation)
-			zeroVelocities(subject)
+			F.zeroVelocities(subject)
 			if onProgress then onProgress(traveled / dist) end
 			if traveled >= dist then break end
 		end
@@ -2343,107 +2333,107 @@ local function vehicleStepMove(subject, anchor, targetPos, onProgress)
 	return true
 end
 
-local function vehicleMoveTo(subject, anchor, targetPos, onProgress)
+function F.vehicleMoveTo(subject, anchor, targetPos, onProgress)
 	if Config.vehicleTpMode == "legit" then
-		return vehicleStepMove(subject, anchor, targetPos, onProgress)
+		return F.vehicleStepMove(subject, anchor, targetPos, onProgress)
 	end
-	local destCF = buildVehicleDestCF(subject, targetPos)
-	return safeVehiclePivot(subject, destCF)
+	local destCF = F.buildVehicleDestCF(subject, targetPos)
+	return F.safeVehiclePivot(subject, destCF)
 end
 
-local function vehicleTeleportAirStep(subject, targetPos)
+function F.vehicleTeleportAirStep(subject, targetPos)
 	if not subject or not subject.Parent then return false end
 	local startPos = subject:GetPivot().Position
 	local cruiseY = math.max(startPos.Y, targetPos.Y) + (Config.climbHeight or 35)
 	local upPos = Vector3.new(startPos.X, cruiseY, startPos.Z)
 	local flyPos = Vector3.new(targetPos.X, cruiseY, targetPos.Z)
 
-	setStatus("машина: набор...")
-	if not vehicleStepMove(subject, nil, upPos) then return false end
+	F.setStatus("машина: набор...")
+	if not F.vehicleStepMove(subject, nil, upPos) then return false end
 
-	setStatus("машина: долёт...")
-	if not vehicleStepMove(subject, nil, flyPos, function(p)
-		setStatus(string.format("машина: долёт %.0f%%", p * 100))
+	F.setStatus("машина: долёт...")
+	if not F.vehicleStepMove(subject, nil, flyPos, function(p)
+		F.setStatus(string.format("машина: долёт %.0f%%", p * 100))
 	end) then
 		return false
 	end
 
 	-- Финал: отпускаем машину в воздухе, чтобы она падала сама.
-	setStatus("машина: отпущена")
-	zeroVelocities(subject)
+	F.setStatus("машина: отпущена")
+	F.zeroVelocities(subject)
 	return true
 end
 
-local function vehicleTeleportTo(subject, anchor, targetPos, useSavedY, instant, vehicleAirStep)
-	setStatus("ТП машиной...")
+function F.vehicleTeleportTo(subject, anchor, targetPos, useSavedY, instant, vehicleAirStep)
+	F.setStatus("ТП машиной...")
 	local useAirStep = vehicleAirStep == true or Config.vehicleTpMode == "air_step"
 	if useAirStep and instant ~= true then
-		return vehicleTeleportAirStep(subject, targetPos)
+		return F.vehicleTeleportAirStep(subject, targetPos)
 	end
 
-	local destPos = resolveVehicleDestPos(targetPos, subject, useSavedY == true)
+	local destPos = F.resolveVehicleDestPos(targetPos, subject, useSavedY == true)
 	local useLegit = Config.vehicleTpMode == "legit" and instant ~= true
 
 	if useLegit then
-		resetVehicleDriveState(subject)
-		setVehicleAnchored(subject, true)
-		vehicleStepMove(subject, anchor, destPos, function(p)
-			setStatus(string.format("машина %.0f%%", p * 100))
+		F.resetVehicleDriveState(subject)
+		F.setVehicleAnchored(subject, true)
+		F.vehicleStepMove(subject, anchor, destPos, function(p)
+			F.setStatus(string.format("машина %.0f%%", p * 100))
 		end)
-		stabilizeVehicle(subject, 3)
-		setVehicleAnchored(subject, false)
-		stabilizeVehicle(subject, 12)
-		liftVehicleIfUnderground(subject)
-		resetVehicleDriveState(subject)
+		F.stabilizeVehicle(subject, 3)
+		F.setVehicleAnchored(subject, false)
+		F.stabilizeVehicle(subject, 12)
+		F.liftVehicleIfUnderground(subject)
+		F.resetVehicleDriveState(subject)
 	else
-		safeVehiclePivot(subject, buildVehicleDestCF(subject, destPos))
+		F.safeVehiclePivot(subject, F.buildVehicleDestCF(subject, destPos))
 	end
 
-	zeroVelocities(subject)
+	F.zeroVelocities(subject)
 	return true
 end
 
-smartTeleportTo = function(targetPos, opts)
+function F.smartTeleportTo(targetPos, opts)
 	opts = opts or {}
 	if not targetPos then
-		notify("точка не задана")
+		F.notify("точка не задана")
 		return false
 	end
 	if emergencyStopRequested then
-		setStatus("остановлено")
+		F.setStatus("остановлено")
 		return false
 	end
-	if teleportBusy then notify("телепорт занят") return false end
+	if teleportBusy then F.notify("телепорт занят") return false end
 
 	local forceMode = opts.forceMode
 	local useSavedY = opts.useSavedY == true
 	local withRouteNoclip = opts.routeNoclip ~= false
 
-	local subject, anchor, kind = getTeleportSubject(forceMode)
+	local subject, anchor, kind = F.getTeleportSubject(forceMode)
 	if not subject then return false end
 
 	teleportBusy = true
 	if kind == "foot" then
-		beginFootTeleportNoclip()
+		F.beginFootTeleportNoclip()
 	elseif withRouteNoclip then
-		beginRouteNoclip()
+		F.beginRouteNoclip()
 	end
 
 	local ok, result = pcall(function()
 		if kind == "vehicle" then
-			return vehicleTeleportTo(subject, anchor, targetPos, useSavedY, opts.instant == true, opts.vehicleAirStep == true)
+			return F.vehicleTeleportTo(subject, anchor, targetPos, useSavedY, opts.instant == true, opts.vehicleAirStep == true)
 		end
-		return footTeleportTo(subject, anchor, targetPos, opts)
+		return F.footTeleportTo(subject, anchor, targetPos, opts)
 	end)
 
 	teleportBusy = false
 	if kind == "vehicle" and opts.skipVehicleStabilize ~= true then
-		stabilizeVehicle(subject, 4)
+		F.stabilizeVehicle(subject, 4)
 	end
-	forceRestoreAllNoclip()
+	F.forceRestoreAllNoclip()
 
 	if not ok then
-		notify("ошибка ТП: " .. tostring(result))
+		F.notify("ошибка ТП: " .. tostring(result))
 		return false
 	end
 	if emergencyStopRequested then
@@ -2452,17 +2442,17 @@ smartTeleportTo = function(targetPos, opts)
 	return result ~= false
 end
 
-local function teleportToWaypoint(key, extraOpts)
+function F.teleportToWaypoint(key, extraOpts)
 	extraOpts = extraOpts or {}
-	local pos = tableToVec3(Config.waypoints and Config.waypoints[key])
+	local pos = F.tableToVec3(Config.waypoints and Config.waypoints[key])
 	if not pos then
 		local label = string.upper(tostring(key))
-		notify(label .. " не задан")
-		setStatus(key .. " не задан")
+		F.notify(label .. " не задан")
+		F.setStatus(key .. " не задан")
 		return false
 	end
 
-	local inVehicle = getVehicle() ~= nil
+	local inVehicle = F.getVehicle() ~= nil
 	local forceMode = extraOpts.forceMode
 	if not forceMode then
 		forceMode = inVehicle and "vehicle" or "foot"
@@ -2482,42 +2472,42 @@ local function teleportToWaypoint(key, extraOpts)
 		opts.routeNoclip = false
 	end
 
-	local ok = smartTeleportTo(pos, opts)
+	local ok = F.smartTeleportTo(pos, opts)
 	if ok then
 		Runtime.armPromptHoldZeroWindow(6.0)
 		Runtime.pulsePromptHoldZeroVisible()
 	end
 	if not ok then
-		notify("ТП → " .. string.upper(tostring(key)) .. " не удался")
+		F.notify("ТП → " .. string.upper(tostring(key)) .. " не удался")
 	end
 	return ok
 end
 
-local function teleportToPosition(pos, opts)
+function F.teleportToPosition(pos, opts)
 	if not pos then
-		setStatus("точка не задана")
+		F.setStatus("точка не задана")
 		return false
 	end
 	opts = opts or {}
 	local target = Vector3.new(pos.X, pos.Y, pos.Z)
-	return smartTeleportTo(target, opts)
+	return F.smartTeleportTo(target, opts)
 end
 
-local function getSmuggleWaypoints()
-	local pickup = tableToVec3(Config.waypoints and Config.waypoints.pickup)
-	local dropoff = tableToVec3(Config.waypoints and Config.waypoints.dropoff)
-	local footZone = tableToVec3(Config.waypoints and Config.waypoints.footZone)
+function F.getSmuggleWaypoints()
+	local pickup = F.tableToVec3(Config.waypoints and Config.waypoints.pickup)
+	local dropoff = F.tableToVec3(Config.waypoints and Config.waypoints.dropoff)
+	local footZone = F.tableToVec3(Config.waypoints and Config.waypoints.footZone)
 	if not pickup or not dropoff or not footZone then
-		setStatus("задай PICKUP / DROPOFF / FOOT")
+		F.setStatus("задай PICKUP / DROPOFF / FOOT")
 		return nil, nil, nil
 	end
 	return pickup, dropoff, footZone
 end
 
-local function teleportFootForCycle(pos, phaseName, footMode)
-	if isActionCancelled() then return false end
-	setPhase(phaseName or "move")
-	local ok = smartTeleportTo(pos, {
+function F.teleportFootForCycle(pos, phaseName, footMode)
+	if F.isActionCancelled() then return false end
+	F.setPhase(phaseName or "move")
+	local ok = F.smartTeleportTo(pos, {
 		forceMode = "foot",
 		routeNoclip = true,
 		footMode = footMode or "elevated",
@@ -2529,134 +2519,134 @@ local function teleportFootForCycle(pos, phaseName, footMode)
 	return ok
 end
 
-local function runCargoPickupSequenceFoot()
+function F.runCargoPickupSequenceFoot()
 	if emergencyStopRequested then
-		setStatus("остановлено")
+		F.setStatus("остановлено")
 		return false
 	end
 
-	local pickup, dropoff, footZone = getSmuggleWaypoints()
+	local pickup, dropoff, footZone = F.getSmuggleWaypoints()
 	if not pickup or not dropoff or not footZone then
 		return false
 	end
-	local selectedItems = getSelectedCargoItems()
+	local selectedItems = F.getSelectedCargoItems()
 	if #selectedItems == 0 then
-		setStatus("грузы не выбраны")
+		F.setStatus("грузы не выбраны")
 		return false
 	end
 
-	if not teleportFootForCycle(pickup, "to-pickup", "elevated") then
+	if not F.teleportFootForCycle(pickup, "to-pickup", "elevated") then
 		return false
 	end
-	if not waitInterruptible(0.1) then return false end
+	if not F.waitInterruptible(0.1) then return false end
 
 	local expectedRemovedByItem = {}
 	for idx, itemName in ipairs(selectedItems) do
-		setPhase(string.format("find-item %d/%d", idx, #selectedItems))
-		local rootNow = getRootPart()
+		F.setPhase(string.format("find-item %d/%d", idx, #selectedItems))
+		local rootNow = F.getRootPart()
 		local nearRef = rootNow and rootNow.Position or pickup
-		local _, cargoPos = findNearestSmugglePurchasePrompt(itemName, nearRef)
+		local _, cargoPos = F.findNearestSmugglePurchasePrompt(itemName, nearRef)
 		if not cargoPos then
-			setStatus("нет предмета: " .. tostring(itemName))
+			F.setStatus("нет предмета: " .. tostring(itemName))
 			return false
 		end
 
-		if not teleportFootForCycle(cargoPos, string.format("to-item %d/%d", idx, #selectedItems), "step") then
+		if not F.teleportFootForCycle(cargoPos, string.format("to-item %d/%d", idx, #selectedItems), "step") then
 			return false
 		end
-		if not waitInterruptible(0.1) then return false end
+		if not F.waitInterruptible(0.1) then return false end
 
-		setPhase(string.format("buy-item %d/%d", idx, #selectedItems))
-		local buyOk, buyMeta = buySmuggleItemTimes(itemName, cargoPos, SMUGGLE_BUY_COUNT_PER_ITEM)
+		F.setPhase(string.format("buy-item %d/%d", idx, #selectedItems))
+		local buyOk, buyMeta = F.buySmuggleItemTimes(itemName, cargoPos, SMUGGLE_BUY_COUNT_PER_ITEM)
 		if not buyOk then
 			return false
 		end
 		local boughtNow = math.max(1, math.floor((buyMeta and buyMeta.boughtCount) or 1))
 		expectedRemovedByItem[itemName] = (expectedRemovedByItem[itemName] or 0) + boughtNow
-		if not waitInterruptible(0.12) then return false end
+		if not F.waitInterruptible(0.12) then return false end
 	end
 
-	if not teleportFootForCycle(dropoff, "to-dropoff", "elevated") then
+	if not F.teleportFootForCycle(dropoff, "to-dropoff", "elevated") then
 		return false
 	end
-	if not waitInterruptible(0.02) then return false end
+	if not F.waitInterruptible(0.02) then return false end
 
-	setPhase("sell-smuggle")
-	local sellPrompt, sellPos = findNearestSellPrompt(dropoff, 90)
+	F.setPhase("sell-smuggle")
+	local sellPrompt, sellPos = F.findNearestSellPrompt(dropoff, 90)
 	if not sellPrompt then
-		setStatus("нет Sell All Smuggle")
-		notify("prompt Sell All Smuggle не найден")
+		F.setStatus("нет Sell All Smuggle")
+		F.notify("prompt Sell All Smuggle не найден")
 		return false
 	end
-	if not sellSmuggleWithVerification(sellPrompt, sellPos, selectedItems, expectedRemovedByItem) then
+	if not F.sellSmuggleWithVerification(sellPrompt, sellPos, selectedItems, expectedRemovedByItem) then
 		return false
 	end
-	if not waitInterruptible(0.02) then return false end
+	if not F.waitInterruptible(0.02) then return false end
 
-	if not teleportFootForCycle(footZone, "to-foot", "elevated") then
+	if not F.teleportFootForCycle(footZone, "to-foot", "elevated") then
 		return false
 	end
-	if not waitInterruptible(0.1) then return false end
+	if not F.waitInterruptible(0.1) then return false end
 
-	setPhase("laundry")
-	local laundryPrompt, laundryPos = findNearestPromptByText("laundry dirty money", footZone, 90)
+	F.setPhase("laundry")
+	local laundryPrompt, laundryPos = F.findNearestPromptByText("laundry dirty money", footZone, 90)
 	if not laundryPrompt then
-		setStatus("нет Laundry Dirty Money")
-		notify("prompt Laundry Dirty Money не найден")
+		F.setStatus("нет Laundry Dirty Money")
+		F.notify("prompt Laundry Dirty Money не найден")
 		return false
 	end
-	local root = getRootPart()
+	local root = F.getRootPart()
 	if laundryPos and root and (root.Position - laundryPos).Magnitude > 5 then
-		if not teleportFootForCycle(laundryPos, "to-laundry-prompt", "step") then return false end
+		if not F.teleportFootForCycle(laundryPos, "to-laundry-prompt", "step") then return false end
 	end
-	if not activateBuyPromptRobust(laundryPrompt) then
+	if not F.activateBuyPromptRobust(laundryPrompt) then
 		return false
 	end
-	if not waitInterruptible(0.15) then return false end
+	if not F.waitInterruptible(0.15) then return false end
 
-	setPhase("idle")
-	setStatus("цикл завершён")
-	discordApi.onCycleComplete()
+	F.setPhase("idle")
+	F.setStatus("цикл завершён")
+	F.hookSession("cycle")
 	return true
 end
 
-local function runCargoPickupSequence()
-	return runCargoPickupSequenceFoot()
+function F.runCargoPickupSequence()
+	return F.runCargoPickupSequenceFoot()
 end
 
-local function runAutoSmuggleLoop()
-	clearEmergencyStop()
+function F.runAutoSmuggleLoop()
+	F.clearEmergencyStop()
 	if Config.vehicleFlingEnabled then
-		setVehicleFlingEnabled(false)
+		F.setVehicleFlingEnabled(false)
 	end
-	setAutoSmuggleFirstPerson(true)
-	applyPromptHoldZeroSweep()
-	stopThread("autoSmuggle")
-	startThread("autoSmuggle", function()
-		discordApi.onSmuggleStart()
+	F.setAutoSmuggleFirstPerson(true)
+	F.applyPromptHoldZeroSweep()
+	F.stopThread("autoSmuggle")
+	F.startThread("autoSmuggle", function()
+		F.hookSession("start")
 		while mounted and threads.autoSmuggle and Config.autoSmuggle and not emergencyStopRequested do
 			Runtime.armPromptHoldZeroWindow(2.0)
-			applyFirstPersonCamera()
+			F.applyFirstPersonCamera()
 			local ok, cycleOk = pcall(runCargoPickupSequence)
 			if not ok then
-				setStatus("ошибка цикла: " .. tostring(cycleOk))
-				waitInterruptible(0.8)
+				F.setStatus("ошибка цикла: " .. tostring(cycleOk))
+				F.waitInterruptible(0.8)
 			elseif not cycleOk then
-				setStatus("цикл не завершён")
-				waitInterruptible(0.8)
+				F.setStatus("цикл не завершён")
+				F.waitInterruptible(0.8)
 			else
-				waitInterruptible(0.35)
+				F.waitInterruptible(0.35)
 			end
 		end
-		forceRestoreAllNoclip()
-		restoreSmugglePromptSettings()
-		setAutoSmuggleFirstPerson(false)
-		setPhase("idle")
-		discordApi.onSmuggleStop()
+		F.forceRestoreAllNoclip()
+		F.restoreSmugglePromptSettings()
+		F.setAutoSmuggleFirstPerson(false)
+		F.setPhase("idle")
+		F.hookSession("stop")
 	end)
 end
 
-local function getGateTargets()
+function F.getGateTargets()
 	local map = Workspace:FindFirstChild("Map")
 	if not map then return {} end
 	local targets = {}
@@ -2669,7 +2659,7 @@ local function getGateTargets()
 	return targets
 end
 
-local function setPartGateHidden(part, hidden)
+function F.setPartGateHidden(part, hidden)
 	if not part:IsA("BasePart") then return end
 	if hidden then
 		if not gatePartState[part] then
@@ -2699,29 +2689,29 @@ local function setPartGateHidden(part, hidden)
 	end
 end
 
-local function setGateFolderHidden(folder, hidden)
+function F.setGateFolderHidden(folder, hidden)
 	if not folder then return end
 	if folder:IsA("BasePart") then
-		setPartGateHidden(folder, hidden)
+		F.setPartGateHidden(folder, hidden)
 	end
 	for _, desc in ipairs(folder:GetDescendants()) do
 		if desc:IsA("BasePart") then
-			setPartGateHidden(desc, hidden)
+			F.setPartGateHidden(desc, hidden)
 		end
 	end
 end
 
-local function setGatesRemoved(removed)
+function F.setGatesRemoved(removed)
 	if not removed then
 		Config.gatesRemoved = false
-		saveConfig()
-		notify("возврат гейтов невозможен без перезахода")
+		F.saveConfig()
+		F.notify("возврат гейтов невозможен без перезахода")
 		return false
 	end
 
-	local targets = getGateTargets()
+	local targets = F.getGateTargets()
 	if #targets == 0 then
-		notify("гейты не найдены")
+		F.notify("гейты не найдены")
 		return false
 	end
 
@@ -2738,22 +2728,22 @@ local function setGatesRemoved(removed)
 	end
 
 	if deletedCount <= 0 then
-		notify("не удалось удалить гейты")
+		F.notify("не удалось удалить гейты")
 		return false
 	end
 
 	Config.gatesRemoved = true
-	saveConfig()
-	notify("гейты удалены намертво (до перезахода)")
+	F.saveConfig()
+	F.notify("гейты удалены намертво (до перезахода)")
 	return true
 end
 
-local function toggleGates()
+function F.toggleGates()
 	if Config.gatesRemoved then
-		notify("гейты уже удалены")
+		F.notify("гейты уже удалены")
 		return
 	end
-	setGatesRemoved(true)
+	F.setGatesRemoved(true)
 end
 
 -- ESP (module)
@@ -2763,8 +2753,8 @@ local espApi = {
 	bind = function() end,
 }
 
-local function initEspApi()
-	local factory = loadOptionalModule("modules/esp.lua")
+function F.initEspApi()
+	local factory = F.loadOptionalModule("modules/esp.lua")
 	if type(factory) ~= "function" then
 		return false
 	end
@@ -2784,80 +2774,17 @@ local function initEspApi()
 	return true
 end
 
-local discordApi = {
-	getWebhook = function() return "" end,
-	setUserWebhook = function() end,
-	sendTest = function() return false, "Discord API недоступен" end,
-	logSession = function() end,
-	onCycleComplete = function() end,
-	onSmuggleStart = function() end,
-	onSmuggleStop = function() end,
-	maybePeriodicReport = function() end,
-}
-
-local function getDiscordSessionFields()
-	local secs = 0
-	if SmuggleSession.startedAt and SmuggleSession.startedAt > 0 then
-		secs = math.max(0, math.floor(os.clock() - SmuggleSession.startedAt))
-	end
-	local mins = math.floor(secs / 60)
-	local secRem = secs % 60
-	local timeStr
-	if mins > 0 then
-		timeStr = string.format("%dм %dс", mins, secRem)
-	else
-		timeStr = secs .. "с"
-	end
-	local cargoText = table.concat(getSelectedCargoItems(), ", ")
-	if cargoText == "" then
-		cargoText = "—"
-	end
-	return {
-		{ name = "Циклов", value = tostring(SmuggleSession.cyclesCompleted or 0), inline = true },
-		{ name = "Продаж", value = tostring(SmuggleSession.sellsCompleted or 0), inline = true },
-		{ name = "Время", value = timeStr, inline = true },
-		{ name = "Фаза", value = tostring(State.phase or "idle"), inline = true },
-		{ name = "Статус", value = localizeStatusText(State.status or ""), inline = true },
-		{ name = "Груз", value = cargoText, inline = false },
-	}
-end
-
-local function initDiscordApi()
-	local factory = loadOptionalModule("modules/discord-log.lua")
-	if type(factory) ~= "function" then
-		return false
-	end
-	local ok, api = pcall(factory, {
-		HttpService = game:GetService("HttpService"),
-		Config = Config,
-		saveConfig = saveConfig,
-		getLocalPlayer = getLocalPlayer,
-		getSessionFields = getDiscordSessionFields,
-		Session = SmuggleSession,
-		BUILD = BUILD,
-	})
-	if not ok or type(api) ~= "table" then
-		return false
-	end
-	for key, fn in pairs(api) do
-		if type(fn) == "function" then
-			discordApi[key] = fn
-		end
-	end
-	return true
-end
-
-local function runAutoWorkLoop()
-	stopThread("autoWork")
-	startThread("autoWork", function()
+function F.runAutoWorkLoop()
+	F.stopThread("autoWork")
+	F.startThread("autoWork", function()
 		while mounted and threads.autoWork and Config.autoWork do
-			setStatus("авто-работа: WIP")
+			F.setStatus("авто-работа: WIP")
 			task.wait(2)
 		end
 	end)
 end
 
-local function mountMain(ctx)
+function F.mountMain(ctx)
 	local ui = ctx.ui
 	local page = ctx.pages.main
 	local makeFlowPanel = ui.makeFlowPanel
@@ -2944,7 +2871,7 @@ local function mountMain(ctx)
 	mountAdaptivePanel(makeHalfHolder(topRow, 1), L("panel_status", "Статус"), 200, nil, "panel_status", function(statusPanel)
 		statusValueLabel = makeStatRow(statusPanel, L("stat_state", "Состояние"), 1, "stat_state")
 		phaseValueLabel = makeStatRow(statusPanel, L("stat_phase", "Фаза"), 2, "stat_phase")
-		statusValueLabel.Text = localizeStatusText(State.status)
+		statusValueLabel.Text = F.localizeStatusText(State.status)
 		phaseValueLabel.Text = State.phase
 	end)
 
@@ -2953,7 +2880,7 @@ local function mountMain(ctx)
 		dropoffValueLabel = makeStatRow(points, L("stat_dropoff", "DROPOFF"), 2, "stat_dropoff")
 		footZoneValueLabel = makeStatRow(points, L("stat_foot", "FOOT"), 3, "stat_foot")
 		cargoValueLabel = makeStatRow(points, L("stat_cargo", "Груз"), 4, "stat_cargo")
-		refreshWaypointLabels()
+		F.refreshWaypointLabels()
 	end)
 
 	local cargoHost = makeBlockHost(2, 166)
@@ -2980,7 +2907,7 @@ local function mountMain(ctx)
 			return nil
 		end
 		local function refreshCargoBtns()
-			local selected = getSelectedCargoItems()
+			local selected = F.getSelectedCargoItems()
 			local selectedOrder = {}
 			for i, name in ipairs(selected) do
 				selectedOrder[name] = i
@@ -3009,7 +2936,7 @@ local function mountMain(ctx)
 			btn:SetAttribute("CargoName", name)
 			btn:SetAttribute("Selected", false)
 			btn.MouseButton1Click:Connect(function()
-				local selected = getSelectedCargoItems()
+				local selected = F.getSelectedCargoItems()
 				local idx = getCargoIndex(selected, name)
 				if idx then
 					if #selected > 1 then
@@ -3021,11 +2948,11 @@ local function mountMain(ctx)
 					end
 					table.insert(selected, name)
 				end
-				Config.cargoItems = sanitizeCargoSelection(selected)
+				Config.cargoItems = F.sanitizeCargoSelection(selected)
 				Config.cargoItem = Config.cargoItems[1]
-				saveConfig()
+				F.saveConfig()
 				refreshCargoBtns()
-				refreshWaypointLabels()
+				F.refreshWaypointLabels()
 			end)
 			table.insert(cargoBtns, btn)
 		end
@@ -3037,20 +2964,20 @@ local function mountMain(ctx)
 		makeFlowToggle(ctrl, L("toggle_auto_smuggle", "Авто контрабанда (цикл)"), Config.autoSmuggle, function(v)
 			Config.autoSmuggle = v
 			if v then
-				clearEmergencyStop()
+				F.clearEmergencyStop()
 				if Config.vehicleFlingEnabled then
-					setVehicleFlingEnabled(false)
+					F.setVehicleFlingEnabled(false)
 				end
-				runAutoSmuggleLoop()
+				F.runAutoSmuggleLoop()
 		else
-			stopThread("autoSmuggle")
-			discordApi.onSmuggleStop()
-			forceRestoreAllNoclip()
-				restoreSmugglePromptSettings()
-				setAutoSmuggleFirstPerson(false)
-				setPhase("idle")
+			F.stopThread("autoSmuggle")
+			F.hookSession("stop")
+			F.forceRestoreAllNoclip()
+				F.restoreSmugglePromptSettings()
+				F.setAutoSmuggleFirstPerson(false)
+				F.setPhase("idle")
 			end
-			saveConfig()
+			F.saveConfig()
 		end, 1, nil, "toggle_auto_smuggle")
 
 		local btnRow = Instance.new("Frame")
@@ -3083,18 +3010,18 @@ local function mountMain(ctx)
 			end
 			b.MouseButton1Click:Connect(function()
 				task.spawn(function()
-					clearEmergencyStop()
+					F.clearEmergencyStop()
 					local ok, err = pcall(cb)
 					if not ok then
-						setStatus("ошибка кнопки")
-						notify("ошибка кнопки: " .. tostring(err))
+						F.setStatus("ошибка кнопки")
+						F.notify("ошибка кнопки: " .. tostring(err))
 					end
 				end)
 			end)
 		end
 
 		makeBtn(L("btn_tp_pickup", "ТП -> PICKUP"), 1, function()
-			teleportToWaypoint("pickup", {
+			F.teleportToWaypoint("pickup", {
 				footMode = "elevated",
 				instant = true,
 				useSavedY = true,
@@ -3102,7 +3029,7 @@ local function mountMain(ctx)
 			})
 		end, "btn_tp_pickup")
 		makeBtn(L("btn_tp_dropoff", "ТП -> DROPOFF"), 2, function()
-			teleportToWaypoint("dropoff", {
+			F.teleportToWaypoint("dropoff", {
 				footMode = "elevated",
 				instant = true,
 				useSavedY = true,
@@ -3110,7 +3037,7 @@ local function mountMain(ctx)
 			})
 		end, "btn_tp_dropoff")
 		makeBtn(L("btn_tp_foot", "ТП -> FOOT"), 3, function()
-			teleportToWaypoint("footZone", {
+			F.teleportToWaypoint("footZone", {
 				footMode = "elevated",
 				instant = true,
 				useSavedY = true,
@@ -3120,7 +3047,7 @@ local function mountMain(ctx)
 	end)
 end
 
-local function mountFeaturesBuiltin(deps, ctx)
+function F.mountFeaturesBuiltin(deps, ctx)
 	deps = deps or {}
 	local values = deps.values or {}
 	local ui = ctx and ctx.ui
@@ -3227,7 +3154,7 @@ local function mountFeaturesBuiltin(deps, ctx)
 	end
 end
 
-local function mountSettingsBuiltin(deps, ctx)
+function F.mountSettingsBuiltin(deps, ctx)
 	deps = deps or {}
 	local values = deps.values or {}
 	local ui = ctx and ctx.ui
@@ -3333,15 +3260,15 @@ local function mountSettingsBuiltin(deps, ctx)
 	makePresetBtn(tr("btn_fling_ultra", "Fling: Ультра"), 272, 130, "ultra", "btn_fling_ultra")
 end
 
-local function shouldUseExternalUiModules()
+function F.shouldUseExternalUiModules()
 	local genv = typeof(getgenv) == "function" and getgenv() or _G
 	return type(genv) == "table" and genv.EPBRUseExternalUiModules == true
 end
 
-local function mountFeatures(ctx)
+function F.mountFeatures(ctx)
 	local extMount = mountFeaturesBuiltin
-	if shouldUseExternalUiModules() then
-		local mod = loadOptionalModule("modules/features-tab.lua")
+	if F.shouldUseExternalUiModules() then
+		local mod = F.loadOptionalModule("modules/features-tab.lua")
 		if type(mod) == "function" then
 			extMount = mod
 		end
@@ -3361,57 +3288,57 @@ local function mountFeatures(ctx)
 		onToggleEsp = function(v)
 			Config.espEnabled = v
 			if not v then espApi.clear() else espApi.refresh() end
-			saveConfig()
+			F.saveConfig()
 		end,
 		onToggleNoclipFoot = function(v)
 			Config.noclipFoot = v
 			if not v then
-				local c = getCharacter()
-				if c then restoreCharacterCollision(c) end
+				local c = F.getCharacter()
+				if c then F.restoreCharacterCollision(c) end
 			end
-			saveConfig()
+			F.saveConfig()
 		end,
 		onToggleNoclipVehicle = function(v)
 			Config.noclipVehicles = v
 			if not v then
-				local vh = findMyVehicle()
-				if vh then restoreNoclip(vh) end
+				local vh = F.findMyVehicle()
+				if vh then F.restoreNoclip(vh) end
 			end
-			saveConfig()
+			F.saveConfig()
 		end,
 		onTogglePromptHoldZero = function(v)
 			Config.forcePromptHoldZero = v
 			if v then
-				applyPromptHoldZeroSweep()
+				F.applyPromptHoldZeroSweep()
 			else
 				Runtime.promptHoldZeroActiveUntil = 0
 				table.clear(Runtime.visiblePrompts)
 			end
-			saveConfig()
+			F.saveConfig()
 		end,
 		onToggleVehicleBoost = function(v)
 			Config.vehicleBoostEnabled = v
-			local vehicle = getVehicle() or trackedVehicle
+			local vehicle = F.getVehicle() or trackedVehicle
 			if v then
-				if vehicle then applyVehicleDriveBoost(vehicle) end
+				if vehicle then F.applyVehicleDriveBoost(vehicle) end
 			elseif vehicle then
-				resetVehicleDriveBoost(vehicle)
+				F.resetVehicleDriveBoost(vehicle)
 			end
-			saveConfig()
+			F.saveConfig()
 		end,
 		onToggleVehicleStopOnS = function(v)
 			Config.vehicleStopOnS = v
-			saveConfig()
+			F.saveConfig()
 		end,
 		onToggleVehicleFling = function(v)
-			setVehicleFlingEnabled(v)
+			F.setVehicleFlingEnabled(v)
 		end,
 		onInstantStopVehicle = function()
-			instantStopVehicle()
-			notify("машина остановлена")
+			F.instantStopVehicle()
+			F.notify("машина остановлена")
 		end,
 		onDeleteGates = function()
-			local removed = setGatesRemoved(true)
+			local removed = F.setGatesRemoved(true)
 			return removed or Config.gatesRemoved
 		end,
 		translate = ctx.translate or function(key, fallback) return fallback or key end,
@@ -3422,10 +3349,10 @@ local function mountFeatures(ctx)
 	end
 end
 
-local function mountSettings(ctx)
+function F.mountSettings(ctx)
 	local extMount = mountSettingsBuiltin
-	if shouldUseExternalUiModules() then
-		local mod = loadOptionalModule("modules/settings-tab.lua")
+	if F.shouldUseExternalUiModules() then
+		local mod = F.loadOptionalModule("modules/settings-tab.lua")
 		if type(mod) == "function" then
 			extMount = mod
 		end
@@ -3444,10 +3371,10 @@ local function mountSettings(ctx)
 			Config.finalHoldSeconds = math.clamp(v, 0, 1.2)
 		elseif key == "vehicleBoostMaxSpeed" then
 			Config.vehicleBoostMaxSpeed = math.clamp(math.floor(v + 0.5), 20, 500)
-			local vehicle = getVehicle() or trackedVehicle
+			local vehicle = F.getVehicle() or trackedVehicle
 			if vehicle and Config.vehicleBoostEnabled then
-				resetVehicleDriveBoost(vehicle)
-				applyVehicleDriveBoost(vehicle)
+				F.resetVehicleDriveBoost(vehicle)
+				F.applyVehicleDriveBoost(vehicle)
 			end
 		elseif key == "vehicleFlingOrbitSpeed" then
 			Config.vehicleFlingOrbitSpeed = math.clamp(v, 2, 60)
@@ -3487,13 +3414,13 @@ local function mountSettings(ctx)
 			Config.vehicleFlingHoldSeconds = math.clamp(p.holdSeconds, 0.3, 10)
 			Config.vehicleFlingRegrabDelay = math.clamp(p.regrabDelay, 0, 0.5)
 			Config.vehicleFlingUltraMult = math.clamp(p.ultraMult, 0.5, 3.5)
-			saveConfig()
-			setStatus("fling preset: " .. tostring(v))
+			F.saveConfig()
+			F.setStatus("fling preset: " .. tostring(v))
 			return
 		else
 			return
 		end
-		saveConfig()
+		F.saveConfig()
 	end
 
 	pcall(extMount, {
@@ -3521,36 +3448,29 @@ local function mountSettings(ctx)
 	}, ctx)
 end
 
-local function mountDiscord(ctx)
-	local extMount = loadOptionalModule("modules/discord-tab.lua")
-	if type(extMount) ~= "function" then
-		return
+function M.getRuntimeSnapshot()
+	local cargoText = table.concat(F.getSelectedCargoItems(), ", ")
+	if cargoText == "" then
+		cargoText = "—"
 	end
-
-	local ok, err = pcall(extMount, {
-		Config = Config,
-		saveConfig = saveConfig,
-		canUseConfigFile = typeof(writefile) == "function" and typeof(isfile) == "function",
-		discordApi = discordApi,
-		translate = ctx.translate or function(key, fallback) return fallback or key end,
-		registerLocale = ctx.registerLocale,
-	}, ctx)
-	if not ok then
-		warn("[EPBR] mountDiscord failed: " .. tostring(err))
-	end
+	return {
+		status = F.localizeStatusText(State.status or ""),
+		phase = State.phase or "idle",
+		cargo = cargoText,
+	}
 end
 
 function M.getUiLanguage()
-	return normalizeLang(Config.uiLanguage)
+	return F.normalizeLang(Config.uiLanguage)
 end
 
 function M.setUiLanguage(lang)
-	Config.uiLanguage = normalizeLang(lang)
-	saveConfig()
+	Config.uiLanguage = F.normalizeLang(lang)
+	F.saveConfig()
 	if statusValueLabel and statusValueLabel.Parent then
-		statusValueLabel.Text = localizeStatusText(State.status)
+		statusValueLabel.Text = F.localizeStatusText(State.status)
 	end
-	refreshWaypointLabels()
+	F.refreshWaypointLabels()
 end
 
 function M.stop()
@@ -3558,47 +3478,46 @@ function M.stop()
 	mounted = false
 	Config.autoSmuggle = false
 	Config.vehicleFlingEnabled = false
-	setAutoSmuggleFirstPerson(false)
-	forceRestoreAllNoclip()
-	restoreSmugglePromptSettings()
-	stopThread("autoSmuggle")
-	stopThread("vehicleFling")
-	stopThread("promptHoldZero")
-	stopThread("promptHoldZeroSweep")
-	stopThread("autoWork")
+	F.setAutoSmuggleFirstPerson(false)
+	F.forceRestoreAllNoclip()
+	F.restoreSmugglePromptSettings()
+	F.stopThread("autoSmuggle")
+	F.stopThread("vehicleFling")
+	F.stopThread("promptHoldZero")
+	F.stopThread("promptHoldZeroSweep")
+	F.stopThread("autoWork")
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	table.clear(conns)
 	espApi.clear()
-	local vehicle = findMyVehicle()
+	local vehicle = F.findMyVehicle()
 	if vehicle then
-		resetVehicleDriveBoost(vehicle)
-		hardRestoreCollision(vehicle)
-		setVehicleAnchored(vehicle, false)
-		liftVehicleIfUnderground(vehicle)
+		F.resetVehicleDriveBoost(vehicle)
+		F.hardRestoreCollision(vehicle)
+		F.setVehicleAnchored(vehicle, false)
+		F.liftVehicleIfUnderground(vehicle)
 	end
-	local char = getCharacter()
-	if char then restoreCharacterCollision(char) end
+	local char = F.getCharacter()
+	if char then F.restoreCharacterCollision(char) end
 	teleportBusy = false
 	Runtime.promptHoldZeroActiveUntil = 0
 	Runtime.lastPromptHoldZeroPulseAt = 0
 	Runtime.heartbeatSpikeStrikes = 0
 	Runtime.lastAntiCrashAt = 0
 	table.clear(Runtime.visiblePrompts)
-	notify("выгружен")
+	F.notify("выгружен")
 end
 
 function M.mount(ctx)
 	if mounted then return end
 	mounted = true
-	clearEmergencyStop()
-	setAutoSmuggleFirstPerson(false)
+	F.clearEmergencyStop()
+	F.setAutoSmuggleFirstPerson(false)
 	ctxRef.player = ctx.player
-	loadConfig()
-	initEspApi()
-	initDiscordApi()
-	local startupChar = getCharacter()
-	if startupChar then restoreCharacterCollision(startupChar) end
-	if Config.gatesRemoved then setGatesRemoved(true) end
+	F.loadConfig()
+	F.initEspApi()
+	local startupChar = F.getCharacter()
+	if startupChar then F.restoreCharacterCollision(startupChar) end
+	if Config.gatesRemoved then F.setGatesRemoved(true) end
 	table.clear(Runtime.visiblePrompts)
 	Runtime.promptHoldZeroActiveUntil = 0
 	Runtime.lastPromptHoldZeroPulseAt = 0
@@ -3611,51 +3530,50 @@ function M.mount(ctx)
 	for _, player in ipairs(Players:GetPlayers()) do
 		espApi.bind(player)
 	end
-	trackConn(Players.PlayerAdded:Connect(function(player)
+	F.trackConn(Players.PlayerAdded:Connect(function(player)
 		espApi.bind(player)
 	end))
-	trackConn(ProximityPromptService.PromptShown:Connect(function(prompt)
+	F.trackConn(ProximityPromptService.PromptShown:Connect(function(prompt)
 		Runtime.trackVisiblePrompt(prompt, true)
 		if Config.forcePromptHoldZero then
 			Runtime.armPromptHoldZeroWindow(PERF.promptHoldZeroActionWindow)
-			forcePromptHoldZero(prompt)
+			F.forcePromptHoldZero(prompt)
 		end
 	end))
-	trackConn(ProximityPromptService.PromptHidden:Connect(function(prompt)
+	F.trackConn(ProximityPromptService.PromptHidden:Connect(function(prompt)
 		Runtime.trackVisiblePrompt(prompt, false)
 	end))
 
-	trackConn(UserInputService.InputBegan:Connect(function(input, processed)
+	F.trackConn(UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then return end
 		if input.KeyCode == Enum.KeyCode.End then
-			requestEmergencyStop("END: экстренная остановка")
+			F.requestEmergencyStop("END: экстренная остановка")
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.S and Config.vehicleStopOnS and getVehicle() then
-			instantStopVehicle()
+		if input.KeyCode == Enum.KeyCode.S and Config.vehicleStopOnS and F.getVehicle() then
+			F.instantStopVehicle()
 		end
 	end))
 
-	local hum = getHumanoid()
+	local hum = F.getHumanoid()
 	if hum then
-		trackConn(hum:GetPropertyChangedSignal("SeatPart"):Connect(function()
-			trackVehicleFromSeat(hum.SeatPart)
-			local vehicle = getVehicle()
+		F.trackConn(hum:GetPropertyChangedSignal("SeatPart"):Connect(function()
+			F.trackVehicleFromSeat(hum.SeatPart)
+			local vehicle = F.getVehicle()
 			if vehicle and Config.vehicleBoostEnabled then
-				applyVehicleDriveBoost(vehicle)
+				F.applyVehicleDriveBoost(vehicle)
 			end
 		end))
-		trackVehicleFromSeat(hum.SeatPart)
+		F.trackVehicleFromSeat(hum.SeatPart)
 	end
 
-	mountMain(ctx)
-	mountFeatures(ctx)
-	mountSettings(ctx)
-	mountDiscord(ctx)
-	applyPromptHoldZeroSweep()
-	runPromptHoldZeroLoop()
+	F.mountMain(ctx)
+	F.mountFeatures(ctx)
+	F.mountSettings(ctx)
+	F.applyPromptHoldZeroSweep()
+	F.runPromptHoldZeroLoop()
 
-	trackConn(RunService.Heartbeat:Connect(function()
+	F.trackConn(RunService.Heartbeat:Connect(function()
 		local now = os.clock()
 		local dt = now - (Runtime.lastHeartbeatAt > 0 and Runtime.lastHeartbeatAt or now)
 		Runtime.lastHeartbeatAt = now
@@ -3664,14 +3582,14 @@ function M.mount(ctx)
 		end
 		if firstPersonAutoActive then
 			if (now - Runtime.lastFirstPersonApplyAt) >= PERF.firstPersonRefreshInterval then
-				applyFirstPersonCamera()
+				F.applyFirstPersonCamera()
 				Runtime.lastFirstPersonApplyAt = now
 			end
 		end
 		if Config.noclipFoot or Config.noclipVehicles or routeNoclipActive then
 			local interval = (routeNoclipActive or teleportBusy) and PERF.noclipUpdateIntervalRoute or PERF.noclipUpdateIntervalIdle
 			if (now - lastNoclipUpdateAt) >= interval then
-				updateNoclip()
+				F.updateNoclip()
 				lastNoclipUpdateAt = now
 			end
 		end
@@ -3680,23 +3598,23 @@ function M.mount(ctx)
 			Runtime.lastEspRefreshAt = now
 		end
 		if Config.vehicleBoostEnabled then
-			local vehicle = getVehicle()
+			local vehicle = F.getVehicle()
 			if vehicle then
 				if (now - lastBoostRetuneAt) >= PERF.boostRetuneInterval then
-					applyVehicleDriveBoost(vehicle)
+					F.applyVehicleDriveBoost(vehicle)
 					lastBoostRetuneAt = now
 				end
-				applyVehicleBoostAssist(vehicle)
+				F.applyVehicleBoostAssist(vehicle)
 			end
 		end
 		if Config.autoSmuggle then
-			discordApi.maybePeriodicReport()
+			F.hookSession("tick")
 		end
 	end))
 
-	setStatus("готов")
-	setPhase("idle")
-	notify("загружен " .. BUILD)
+	F.setStatus("готов")
+	F.setPhase("idle")
+	F.notify("загружен " .. BUILD)
 end
 
 return M
