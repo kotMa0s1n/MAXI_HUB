@@ -4,7 +4,7 @@
 
 local TELEGRAM_LINK = "https://t.me/MAXI_HUB"
 local PLACE_ID = 14502598369
-local BUILD = "v0.15.8"
+local BUILD = "v0.15.9"
 
 local Players = game:GetService("Players")
 local DEFAULT_UI_POS = UDim2.new(0, 16, 0.5, -270)
@@ -2055,7 +2055,7 @@ local F = {}
 
 local PLACE_ID = 14502598369
 local CONFIG_FILE = "el-paso-br-config.json"
-local BUILD = "v0.15.8"
+local BUILD = "v0.15.9"
 
 local CARGO_ITEMS = {
 	"Hot Dog",
@@ -3690,11 +3690,64 @@ end
 
 function F.forcePromptHoldZero(prompt)
 	if not prompt or not prompt.Parent or not prompt:IsA("ProximityPrompt") then return end
+	if prompt:GetAttribute("EPBR_SkipHoldZero") == true then return end
 	pcall(function()
 		if prompt.HoldDuration ~= 0 then
 			prompt.HoldDuration = 0
 		end
 	end)
+end
+
+function F.preparePromptForUse(prompt, opts)
+	opts = opts or {}
+	if not prompt or not prompt.Parent or not prompt:IsA("ProximityPrompt") then
+		return false
+	end
+	Runtime.trackVisiblePrompt(prompt, true)
+	local minDistance = tonumber(opts.minDistance) or 12
+	local zeroHold = opts.zeroHold ~= false
+	pcall(function()
+		prompt.MaxActivationDistance = math.max(tonumber(prompt.MaxActivationDistance) or 0, minDistance)
+		if zeroHold and Config.forcePromptHoldZero then
+			prompt.HoldDuration = 0
+		end
+	end)
+	if opts.armWindow ~= false then
+		Runtime.armPromptHoldZeroWindow(opts.window or 3.5)
+		Runtime.pulsePromptHoldZeroVisible()
+	end
+	return true
+end
+
+function F.scanAndTrackPromptsNear(nearPos, maxDistance)
+	if not nearPos then return 0 end
+	maxDistance = maxDistance or 90
+	local tracked = 0
+	local stack = { Workspace }
+	local processed = 0
+	while #stack > 0 and not F.isActionCancelled() do
+		local inst = stack[#stack]
+		stack[#stack] = nil
+		if inst:IsA("ProximityPrompt") and inst.Enabled then
+			local pos = F.getPromptWorldPos(inst)
+			if pos and (pos - nearPos).Magnitude <= maxDistance then
+				F.preparePromptForUse(inst, { armWindow = false, minDistance = 12 })
+				tracked += 1
+			end
+		end
+		for _, child in ipairs(inst:GetChildren()) do
+			stack[#stack + 1] = child
+		end
+		processed += 1
+		if processed % 220 == 0 then
+			task.wait()
+		end
+	end
+	if tracked > 0 and Config.forcePromptHoldZero then
+		Runtime.armPromptHoldZeroWindow(4.0)
+		Runtime.pulsePromptHoldZeroVisible()
+	end
+	return tracked
 end
 
 Runtime.trackVisiblePrompt = function(prompt, shouldKeep)
@@ -4035,26 +4088,19 @@ function F.activateBuyPromptRobust(prompt)
 	return true
 end
 
-function F.activateSellPromptFast(prompt)
-	if not prompt or not prompt.Parent then return false end
-	Runtime.trackVisiblePrompt(prompt, true)
-	Runtime.armPromptHoldZeroWindow(2.5)
-	Runtime.pulsePromptHoldZeroVisible()
+function F.activateSellPromptRobust(prompt)
+	if not F.preparePromptForUse(prompt, { minDistance = 14, window = 4.0 }) then
+		return false
+	end
 	F.lookCameraDown()
-	pcall(function()
-		prompt.HoldDuration = 0
-		prompt.MaxActivationDistance = math.max(tonumber(prompt.MaxActivationDistance) or 0, 100)
-	end)
+	local holdSecs = math.max(0.55, Config.smuggleHoldSeconds or 0.8)
 	if typeof(fireproximityprompt) == "function" then
-		pcall(function() fireproximityprompt(prompt, 0) end)
-		task.wait(0.01)
-		pcall(function() fireproximityprompt(prompt, 0) end)
+		pcall(function() fireproximityprompt(prompt, holdSecs) end)
+	end
+	if F.usePrompt(prompt, holdSecs) then
 		return true
 	end
-	if F.activatePromptSmart(prompt, 0.08) then
-		return true
-	end
-	return F.tapPrompt(prompt)
+	return F.holdE(holdSecs, prompt)
 end
 
 function F.buySmuggleItemTimes(itemName, nearPos, times)
@@ -4187,34 +4233,41 @@ function F.sellSmuggleWithVerification(sellPrompt, sellPos, itemNames, expectedR
 		if F.isActionCancelled() then return false end
 		local root = F.getRootPart()
 		local refPos = (root and root.Position) or sellPos
+		if refPos then
+			F.scanAndTrackPromptsNear(refPos, 90)
+		end
 		local refreshedPrompt, refreshedPos = F.findNearestSellPrompt(refPos, 90)
 		if refreshedPrompt then
 			sellPrompt = refreshedPrompt
 			sellPos = refreshedPos or sellPos
 		end
 		if not sellPrompt then
-			if not F.waitInterruptible(0.04) then return false end
+			if not F.waitInterruptible(0.08) then return false end
 			continue
 		end
 
-		pcall(function()
-			sellPrompt.HoldDuration = 0
-			sellPrompt.MaxActivationDistance = math.max(tonumber(sellPrompt.MaxActivationDistance) or 0, 100)
-		end)
+		F.preparePromptForUse(sellPrompt, { minDistance = 14, window = 4.0 })
 
 		root = F.getRootPart()
-		if sellPos and root and (root.Position - sellPos).Magnitude > 6.8 then
+		if sellPos and root and (root.Position - sellPos).Magnitude > 5.5 then
 			if not F.smartTeleportTo(sellPos, { forceMode = "foot", routeNoclip = true, footMode = "step" }) then
 				return false
 			end
-			if not F.waitInterruptible(0.03) then return false end
+			if not F.waitInterruptible(0.12) then return false end
+			F.scanAndTrackPromptsNear(sellPos, 90)
+			local againPrompt, againPos = F.findNearestSellPrompt(sellPos, 90)
+			if againPrompt then
+				sellPrompt = againPrompt
+				sellPos = againPos or sellPos
+				F.preparePromptForUse(sellPrompt, { minDistance = 14, window = 4.0 })
+			end
 		end
 		if sellPos then
-			F.holdFootAtPosition(Vector3.new(sellPos.X, sellPos.Y, sellPos.Z), 0.05)
+			F.holdFootAtPosition(Vector3.new(sellPos.X, sellPos.Y, sellPos.Z), 0.22)
 		end
 
 		F.setStatus(string.format("продажа (попытка %d)", attempt))
-		if not F.activateSellPromptFast(sellPrompt) then
+		if not F.activateSellPromptRobust(sellPrompt) then
 			return false
 		end
 
@@ -4633,13 +4686,18 @@ function F.runCargoPickupSequenceFoot()
 		if not F.waitInterruptible(0.12) then return false end
 	end
 
+	F.restoreSmugglePromptSettings()
+
 	if not F.teleportFootForCycle(dropoff, "to-dropoff", "elevated") then
 		return false
 	end
-	if not F.waitInterruptible(0.02) then return false end
+	if not F.waitInterruptible(0.15) then return false end
 
 	F.setPhase("sell-smuggle")
-	local sellPrompt, sellPos = F.findNearestSellPrompt(dropoff, 90)
+	local rootAtSell = F.getRootPart()
+	local sellRef = (rootAtSell and rootAtSell.Position) or dropoff
+	F.scanAndTrackPromptsNear(sellRef, 100)
+	local sellPrompt, sellPos = F.findNearestSellPrompt(sellRef, 100)
 	if not sellPrompt then
 		F.setStatus("нет Sell All Smuggle")
 		F.notify("prompt Sell All Smuggle не найден")
