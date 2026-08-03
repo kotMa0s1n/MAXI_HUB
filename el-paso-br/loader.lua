@@ -1,7 +1,7 @@
 -- EPBR | auto-loader (скачивает с GitHub → workspace/el-paso-br/)
 -- loadstring(game:HttpGet("https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/loader.lua"))()
 
-local LOADER_VERSION = "1.0"
+local LOADER_VERSION = "1.1"
 
 local BASES = {
 	"https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/",
@@ -9,8 +9,8 @@ local BASES = {
 }
 
 local FILES = {
-	"RUN.lua",
-	"el-paso-br.lua",
+	"launcher.lua",
+	"epbr-core.lua",
 }
 
 local WORKSPACE_DIR = "el-paso-br"
@@ -86,6 +86,7 @@ local genv = getGenv()
 genv.EPBR_OfficialRaw = BASES[1]
 genv.EPBR_LoaderUrl = BASES[1] .. "loader.lua"
 genv.EPBR_LoaderVersion = LOADER_VERSION
+genv.EPBR_RepoOnly = true
 genv.MaxiHubSkipKey = true
 
 if typeof(makefolder) == "function" then
@@ -96,9 +97,9 @@ for _, name in ipairs(FILES) do
 	writefile(WORKSPACE_DIR .. "/" .. name, fetchOfficial(name))
 end
 
-local runSrc = readfile(WORKSPACE_DIR .. "/RUN.lua")
-local chunk, err = loadstring(runSrc, "@RUN.lua")
+local launcher = readfile(WORKSPACE_DIR .. "/launcher.lua")
+local chunk, err = loadstring(launcher, "@launcher.lua")
 if not chunk then
-	error("[EPBR] RUN.lua: " .. tostring(err))
+	error("[EPBR] launcher: " .. tostring(err))
 end
 chunk()

@@ -1,10 +1,5 @@
---[[ El Paso, Texas: Border Roleplay
-  Локально:
-    loadstring(readfile("el-paso-br/RUN.lua"))()
-
-  С GitHub (ничего не класть в workspace):
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/loader.lua"))()
-]]
+-- EPBR | launcher (webhook + загрузка epbr-core.lua)
+-- Файлы в workspace/el-paso-br/: launcher.lua, epbr-core.lua
 
 if typeof(getgenv) == "function" and getgenv().EPBR_Stop then
 	pcall(getgenv().EPBR_Stop)
@@ -165,7 +160,8 @@ end
 
 local OFFICIAL_RAW = "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/"
 local CDN_RAW = "https://cdn.jsdelivr.net/gh/kotMa0s1n/MAXI_HUB@main/el-paso-br/"
-local MAIN_FILE = "el-paso-br.lua"
+local MAIN_FILE = "epbr-core.lua"
+local LEGACY_MAIN_FILE = "el-paso-br.lua"
 local WORKSPACE_DIR = "el-paso-br"
 
 local function getOfficialBases()
@@ -180,11 +176,16 @@ end
 
 local function getMainPaths()
 	local paths = {}
+	local names = { MAIN_FILE, LEGACY_MAIN_FILE }
 	if type(genv) == "table" and type(genv.EPBR_LocalRoot) == "string" and genv.EPBR_LocalRoot ~= "" then
-		table.insert(paths, genv.EPBR_LocalRoot .. "/" .. MAIN_FILE)
+		for _, name in ipairs(names) do
+			table.insert(paths, genv.EPBR_LocalRoot .. "/" .. name)
+		end
 	end
-	table.insert(paths, WORKSPACE_DIR .. "/" .. MAIN_FILE)
-	table.insert(paths, MAIN_FILE)
+	for _, name in ipairs(names) do
+		table.insert(paths, WORKSPACE_DIR .. "/" .. name)
+		table.insert(paths, name)
+	end
 	return paths
 end
 
@@ -220,17 +221,17 @@ local function isValidLua(src, label)
 	if type(src) ~= "string" or src == "" then
 		return false
 	end
-	return loadstring(src, label or "@el-paso-br") ~= nil
+	return loadstring(src, label or "@epbr-core") ~= nil
 end
 
-local function cacheMainSource(src)
+local function cacheMainSource(src, fileName)
 	if type(src) ~= "string" or src == "" then return end
 	if typeof(writefile) ~= "function" then return end
 	if typeof(makefolder) == "function" then
 		pcall(makefolder, WORKSPACE_DIR)
 	end
 	pcall(function()
-		writefile(WORKSPACE_DIR .. "/" .. MAIN_FILE, src)
+		writefile(WORKSPACE_DIR .. "/" .. fileName, src)
 	end)
 end
 
@@ -250,10 +251,12 @@ local function fetchMainSource()
 	end
 
 	for _, base in ipairs(getOfficialBases()) do
-		local src = httpGet(base .. MAIN_FILE .. "?v=" .. bust)
-		if isValidLua(src, "@el-paso-br.lua") then
-			cacheMainSource(src)
-			return src, "github:" .. base
+		for _, fileName in ipairs({ MAIN_FILE, LEGACY_MAIN_FILE }) do
+			local src = httpGet(base .. fileName .. "?v=" .. bust)
+			if isValidLua(src, "@" .. fileName) then
+				cacheMainSource(src, MAIN_FILE)
+				return src, "github:" .. base .. fileName
+			end
 		end
 	end
 
@@ -268,13 +271,13 @@ end
 
 local source, sourceTag = fetchMainSource()
 if type(source) ~= "string" or source == "" then
-	warn("[EPBR] Не найден el-paso-br.lua (workspace или GitHub)")
+	warn("[EPBR] Не найден epbr-core.lua (workspace или GitHub)")
 	return
 end
 
 print("[EPBR] -> " .. tostring(sourceTag or MAIN_FILE))
 
-local chunk, compileErr = loader(source, "@el-paso-br")
+local chunk, compileErr = loader(source, "@epbr-core")
 if type(chunk) ~= "function" then
 	warn("[EPBR] compile: " .. tostring(compileErr))
 	return
