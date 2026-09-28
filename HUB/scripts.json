@@ -2,76 +2,86 @@
   "games": [
     {
       "name": "British Railway",
+      "short": "Autopilot, doors, AWS, auto next route",
+      "emoji": "🚂",
+      "icon": "rbxthumb://type=GameIcon&id=10082031223&w=150&h=150",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/BR/loader.lua"
     },
     {
       "name": "Stepford County Railway",
+      "short": "Autopilot, doors, AWS, auto next leg",
+      "emoji": "🚃",
+      "icon": "rbxthumb://type=GameIcon&id=7049848150&w=150&h=150",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/SCR/loader.lua"
     },
     {
       "name": "El Paso BR",
+      "short": "Border RP autopilot",
+      "emoji": "🌵",
+      "icon": "rbxthumb://type=GameIcon&id=14502598369&w=150&h=150",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/loader.lua"
     },
     {
       "name": "MAXI HUB Farm",
+      "short": "AFK trees, stones, auto-sell",
+      "emoji": "🌲",
+      "icon": "rbxthumb://type=GameIcon&id=2668101271&w=150&h=150",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxi-hub/master/loader.lua"
-    },
-    {
-      "name": "Slap Battles",
-      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/slap--battles.lua"
-    },
-    {
-      "name": "War Tycoon",
-      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/War_Tycoon.lua"
-    },
-    {
-      "name": "LT2",
-      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/LT2.lua"
-    },
-    {
-      "name": "Epic Minigames",
-      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/EpicMinagames.lua"
     }
   ],
   "universal": [
     {
       "name": "Anti AFK",
+      "short": "Stops idle kick",
+      "emoji": "🛡️",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/anti-afk.lua"
     },
     {
       "name": "UI Keyboard",
+      "short": "On-screen keyboard",
+      "emoji": "⌨️",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/GUI_keyboard.lua"
     },
     {
       "name": "UNC Check",
+      "short": "Executor compatibility test",
+      "emoji": "🧪",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/UNC.lua"
     },
     {
       "name": "3D Render",
+      "short": "Render settings",
+      "emoji": "🖥️",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/3D%20render.lua"
     },
     {
       "name": "Freecam",
+      "short": "Free camera",
+      "emoji": "📷",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/freecam.lua"
     },
     {
       "name": "Inviz",
+      "short": "Local invisibility",
+      "emoji": "👻",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Inviz.lua"
     },
     {
       "name": "Rewind player",
+      "short": "Rewind character",
+      "emoji": "⏪",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Rewind_the_player.lua"
     },
     {
-      "name": "Universal MAXI HUB",
-      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Universal_MAXI%20HUB.lua"
-    },
-    {
       "name": "Infinite Yield",
+      "short": "Admin commands",
+      "emoji": "⚡",
       "url": "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"
     },
     {
       "name": "Dex Explorer",
+      "short": "Instance explorer",
+      "emoji": "🔍",
       "url": "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"
     }
   ]

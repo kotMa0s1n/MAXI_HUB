@@ -21,7 +21,7 @@ end
 local TEXT = {
 	en = {
 		tab_games = "Games",
-		tab_games_sub = "Click to inject",
+		tab_games_sub = "MAXI HUB scripts",
 		tab_universal = "Universal",
 		tab_universal_sub = "Works in any game",
 		tab_credits = "About",
@@ -30,6 +30,9 @@ local TEXT = {
 		discord = "Discord",
 		discord_copied = "Copied!",
 		busy = "Injecting…",
+		run = "Run",
+		search = "Search scripts…",
+		empty = "Nothing found",
 		hide_hint = "RightCtrl — hide",
 		hide_open = "RightCtrl — open menu",
 		hide_mobile = "Menu — open",
@@ -37,7 +40,7 @@ local TEXT = {
 	},
 	ru = {
 		tab_games = "Игры",
-		tab_games_sub = "Нажми, чтобы запустить",
+		tab_games_sub = "Скрипты MAXI HUB",
 		tab_universal = "Универсал",
 		tab_universal_sub = "Работает в любой игре",
 		tab_credits = "О скрипте",
@@ -46,6 +49,9 @@ local TEXT = {
 		discord = "Дискорд",
 		discord_copied = "Скопировано!",
 		busy = "Запуск…",
+		run = "Запуск",
+		search = "Поиск скриптов…",
+		empty = "Ничего не найдено",
 		hide_hint = "RightCtrl — скрыть",
 		hide_open = "RightCtrl — открыть меню",
 		hide_mobile = "Меню — открыть",
@@ -61,14 +67,15 @@ end
 
 local FALLBACK = {
 	games = {
-		{ name = "British Railway", url = RAW .. "BR/loader.lua" },
-		{ name = "Stepford County Railway", url = RAW .. "SCR/loader.lua" },
-		{ name = "El Paso BR", url = RAW .. "el-paso-br/loader.lua" },
+		{ name = "British Railway", short = "Autopilot, doors, AWS", emoji = "🚂", url = RAW .. "BR/loader.lua" },
+		{ name = "Stepford County Railway", short = "Autopilot, doors, AWS", emoji = "🚃", url = RAW .. "SCR/loader.lua" },
+		{ name = "El Paso BR", short = "Border RP autopilot", emoji = "🌵", url = RAW .. "el-paso-br/loader.lua" },
+		{ name = "MAXI HUB Farm", short = "AFK farm", emoji = "🌲", url = "https://raw.githubusercontent.com/kotMa0s1n/maxi-hub/master/loader.lua" },
 	},
 	universal = {
-		{ name = "Anti AFK", url = "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/anti-afk.lua" },
-		{ name = "Infinite Yield", url = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source" },
-		{ name = "Dex Explorer", url = "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua" },
+		{ name = "Anti AFK", short = "Stops idle kick", emoji = "🛡️", url = "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/anti-afk.lua" },
+		{ name = "Infinite Yield", short = "Admin commands", emoji = "⚡", url = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source" },
+		{ name = "Dex Explorer", short = "Instance explorer", emoji = "🔍", url = "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua" },
 	},
 }
 
@@ -173,15 +180,13 @@ local COLORS = uiInstance.COLORS
 local addCorner = uiInstance.addCorner
 local pages = uiInstance.contentPages
 
-local function inject(entry, btn)
+local function inject(entry)
 	if injecting or type(entry) ~= "table" or type(entry.url) ~= "string" or entry.url == "" then
 		return
 	end
 	injecting = true
-	if btn then
-		btn.Text = L("busy")
-	end
 	local url = entry.url
+	local name = entry.name or "script"
 	if uiInstance and typeof(uiInstance.Destroy) == "function" then
 		pcall(uiInstance.Destroy)
 	end
@@ -191,34 +196,175 @@ local function inject(entry, btn)
 		if type(src) ~= "string" or src == "" then
 			return
 		end
-		local fn, err = loadstring(src, "@" .. (entry.name or "script"))
-		if not fn then
-			return
+		local fn = loadstring(src, "@" .. name)
+		if fn then
+			fn()
 		end
-		fn()
+	end)
+end
+
+local function matchesQuery(entry, query)
+	if query == "" then
+		return true
+	end
+	local hay = string.lower((entry.name or "") .. " " .. (entry.short or ""))
+	return hay:find(query, 1, true) ~= nil
+end
+
+local function makeCard(parent, entry, order)
+	local card = Instance.new("TextButton")
+	card.Name = "Card"
+	card.Size = UDim2.new(1, 0, 0, 72)
+	card.BackgroundColor3 = COLORS.card or COLORS.panel
+	card.BorderSizePixel = 0
+	card.AutoButtonColor = false
+	card.Text = ""
+	card.LayoutOrder = order
+	card.Parent = parent
+	addCorner(card, 10)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLORS.line
+	stroke.Thickness = 1
+	stroke.Transparency = 0.35
+	stroke.Parent = card
+
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 10)
+	pad.PaddingRight = UDim.new(0, 10)
+	pad.PaddingTop = UDim.new(0, 10)
+	pad.PaddingBottom = UDim.new(0, 10)
+	pad.Parent = card
+
+	local icon = Instance.new("ImageLabel")
+	icon.Size = UDim2.new(0, 52, 0, 52)
+	icon.Position = UDim2.new(0, 0, 0.5, -26)
+	icon.BackgroundColor3 = COLORS.bg
+	icon.BorderSizePixel = 0
+	icon.ScaleType = Enum.ScaleType.Crop
+	icon.Image = (type(entry.icon) == "string" and entry.icon) or ""
+	icon.Parent = card
+	addCorner(icon, 8)
+
+	if icon.Image == "" then
+		local em = Instance.new("TextLabel")
+		em.Size = UDim2.new(1, 0, 1, 0)
+		em.BackgroundTransparency = 1
+		em.Font = Enum.Font.GothamBold
+		em.TextSize = 22
+		em.Text = entry.emoji or "▶"
+		em.Parent = icon
+	end
+
+	local run = Instance.new("TextLabel")
+	run.Size = UDim2.new(0, 58, 0, 28)
+	run.Position = UDim2.new(1, -58, 0.5, -14)
+	run.BackgroundColor3 = COLORS.accent
+	run.BorderSizePixel = 0
+	run.Font = Enum.Font.GothamBold
+	run.TextSize = 12
+	run.TextColor3 = COLORS.bg
+	run.Text = L("run")
+	run.Parent = card
+	addCorner(run, 7)
+
+	local name = Instance.new("TextLabel")
+	name.Size = UDim2.new(1, -130, 0, 20)
+	name.Position = UDim2.new(0, 64, 0, 6)
+	name.BackgroundTransparency = 1
+	name.Font = Enum.Font.GothamBold
+	name.TextSize = 14
+	name.TextColor3 = COLORS.text
+	name.TextXAlignment = Enum.TextXAlignment.Left
+	name.TextTruncate = Enum.TextTruncate.AtEnd
+	name.Text = entry.name or "Script"
+	name.Parent = card
+
+	local short = Instance.new("TextLabel")
+	short.Size = UDim2.new(1, -130, 0, 28)
+	short.Position = UDim2.new(0, 64, 0, 28)
+	short.BackgroundTransparency = 1
+	short.Font = Enum.Font.Gotham
+	short.TextSize = 11
+	short.TextColor3 = COLORS.muted
+	short.TextXAlignment = Enum.TextXAlignment.Left
+	short.TextYAlignment = Enum.TextYAlignment.Top
+	short.TextWrapped = true
+	short.Text = entry.short or ""
+	short.Parent = card
+
+	card.MouseEnter:Connect(function()
+		stroke.Color = COLORS.accent
+		stroke.Transparency = 0
+		card.BackgroundColor3 = COLORS.panel
+	end)
+	card.MouseLeave:Connect(function()
+		stroke.Color = COLORS.line
+		stroke.Transparency = 0.35
+		card.BackgroundColor3 = COLORS.card or COLORS.panel
+	end)
+	card.MouseButton1Click:Connect(function()
+		run.Text = L("busy")
+		inject(entry)
 	end)
 end
 
 local function fillScriptPage(page, list)
 	local scroll = uiInstance.makeScrollPage(page)
 	local wrap = uiInstance.makeListWrap(scroll)
-	for i, entry in ipairs(list) do
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1, 0, 0, 40)
-		btn.BackgroundColor3 = COLORS.accent
-		btn.BorderSizePixel = 0
-		btn.Font = Enum.Font.GothamBold
-		btn.TextSize = 13
-		btn.TextColor3 = COLORS.bg
-		btn.Text = entry.name or "Script"
-		btn.AutoButtonColor = false
-		btn.LayoutOrder = i
-		btn.Parent = wrap
-		addCorner(btn, 8)
-		btn.MouseButton1Click:Connect(function()
-			inject(entry, btn)
-		end)
+	if wrap:FindFirstChildOfClass("UIListLayout") then
+		wrap:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 8)
 	end
+
+	local search = Instance.new("TextBox")
+	search.Size = UDim2.new(1, 0, 0, 36)
+	search.BackgroundColor3 = COLORS.panel
+	search.BorderSizePixel = 0
+	search.Font = Enum.Font.Gotham
+	search.TextSize = 13
+	search.TextColor3 = COLORS.text
+	search.PlaceholderText = L("search")
+	search.PlaceholderColor3 = COLORS.muted
+	search.ClearTextOnFocus = false
+	search.Text = ""
+	search.LayoutOrder = 0
+	search.Parent = wrap
+	addCorner(search, 8)
+	local searchPad = Instance.new("UIPadding")
+	searchPad.PaddingLeft = UDim.new(0, 12)
+	searchPad.PaddingRight = UDim.new(0, 12)
+	searchPad.Parent = search
+
+	local empty = Instance.new("TextLabel")
+	empty.Size = UDim2.new(1, 0, 0, 40)
+	empty.BackgroundTransparency = 1
+	empty.Font = Enum.Font.Gotham
+	empty.TextSize = 12
+	empty.TextColor3 = COLORS.muted
+	empty.Text = L("empty")
+	empty.Visible = false
+	empty.LayoutOrder = 999
+	empty.Parent = wrap
+
+	local function paint()
+		local query = string.lower((search.Text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+		for _, ch in ipairs(wrap:GetChildren()) do
+			if ch.Name == "Card" then
+				ch:Destroy()
+			end
+		end
+		local n = 0
+		for _, entry in ipairs(list) do
+			if matchesQuery(entry, query) then
+				n = n + 1
+				makeCard(wrap, entry, n)
+			end
+		end
+		empty.Visible = n == 0
+	end
+
+	search:GetPropertyChangedSignal("Text"):Connect(paint)
+	paint()
 end
 
 fillScriptPage(pages[1], catalog.games)
