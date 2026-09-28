@@ -1,7 +1,7 @@
 -- MAXI HUB | universal entry
 -- loadstring(game:HttpGet("https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/loader.lua"))()
 
-local LOADER_VERSION = "1.0"
+local LOADER_VERSION = "1.2"
 local RAW = "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/"
 local CDN = "https://cdn.jsdelivr.net/gh/kotMa0s1n/MAXI_HUB@main/"
 
@@ -10,6 +10,7 @@ local GAMES = {
 	[7049848150] = { name = "Stepford County Railway", path = "SCR/loader.lua" },
 	[3647330858] = { name = "Stepford County Railway", path = "SCR/loader.lua" },
 	[14502598369] = { name = "El Paso BR", path = "el-paso-br/loader.lua" },
+	[2668101271] = { name = "MAXI HUB Farm", url = "https://raw.githubusercontent.com/kotMa0s1n/maxi-hub/master/loader.lua" },
 }
 
 local MIN_BYTES = 64
@@ -60,7 +61,7 @@ local function acceptDownload(src)
 	return src
 end
 
-local function fetchScript(relPath)
+local function fetchPath(relPath)
 	local bust = cacheBust()
 	for _, base in ipairs({ RAW, CDN }) do
 		local body = acceptDownload(httpGet(base .. relPath .. "?v=" .. bust))
@@ -69,6 +70,24 @@ local function fetchScript(relPath)
 		end
 	end
 	return nil
+end
+
+local function fetchUrl(url)
+	local bust = cacheBust()
+	local sep = string.find(url, "?", 1, true) and "&" or "?"
+	return acceptDownload(httpGet(url .. sep .. "v=" .. bust))
+end
+
+local function runSource(source, chunkName)
+	if type(source) ~= "string" then
+		return false
+	end
+	local chunk, err = loadstring(source, chunkName)
+	if not chunk then
+		return false, err
+	end
+	chunk()
+	return true
 end
 
 local function detectByGui()
@@ -87,16 +106,28 @@ local function detectByGui()
 	return nil
 end
 
-local function supportedList()
-	local seen, names = {}, {}
-	for _, g in pairs(GAMES) do
-		if not seen[g.name] then
-			seen[g.name] = true
-			table.insert(names, g.name)
+local function showPicker()
+	local HttpService = game:GetService("HttpService")
+	local uiSrc = fetchPath("HUB/maxi-hub-ui.lua") or fetchPath("BR/maxi-hub-ui.lua")
+	local hubSrc = fetchPath("HUB/hub.lua")
+	if not uiSrc or not hubSrc then
+		return false
+	end
+	local uiFn, uiErr = loadstring(uiSrc, "@maxi-hub-ui.lua")
+	if not uiFn then
+		return false, uiErr
+	end
+	genv._MaxiHubUILibrary = uiFn()
+	local json = fetchPath("HUB/scripts.json")
+	if json then
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(json)
+		end)
+		if ok and type(data) == "table" then
+			genv.MaxiHubScriptCatalog = data
 		end
 	end
-	table.sort(names)
-	return table.concat(names, ", ")
+	return runSource(hubSrc, "@hub.lua")
 end
 
 local placeId = tonumber(game.PlaceId) or 0
@@ -104,18 +135,18 @@ local gameInfo = GAMES[placeId]
 if not gameInfo then
 	gameInfo = detectByGui()
 end
-if not gameInfo then
-	error("[MAXI HUB] No script for this game (PlaceId " .. tostring(placeId) .. "). Supported: " .. supportedList())
+
+if gameInfo then
+	local source
+	if type(gameInfo.url) == "string" then
+		source = fetchUrl(gameInfo.url)
+	else
+		source = fetchPath(gameInfo.path)
+	end
+	if source then
+		runSource(source, "@" .. (gameInfo.path or gameInfo.name or "game"))
+		return
+	end
 end
 
-local source = fetchScript(gameInfo.path)
-if not source then
-	error("[MAXI HUB] Failed to download " .. gameInfo.name .. " loader")
-end
-
-local chunk, err = loadstring(source, "@" .. gameInfo.path)
-if not chunk then
-	error("[MAXI HUB] Compile " .. gameInfo.name .. ": " .. tostring(err))
-end
-
-chunk()
+showPicker()

@@ -1,0 +1,78 @@
+{
+  "games": [
+    {
+      "name": "British Railway",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/BR/loader.lua"
+    },
+    {
+      "name": "Stepford County Railway",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/SCR/loader.lua"
+    },
+    {
+      "name": "El Paso BR",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/loader.lua"
+    },
+    {
+      "name": "MAXI HUB Farm",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxi-hub/master/loader.lua"
+    },
+    {
+      "name": "Slap Battles",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/slap--battles.lua"
+    },
+    {
+      "name": "War Tycoon",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/War_Tycoon.lua"
+    },
+    {
+      "name": "LT2",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/LT2.lua"
+    },
+    {
+      "name": "Epic Minigames",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/EpicMinagames.lua"
+    }
+  ],
+  "universal": [
+    {
+      "name": "Anti AFK",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/anti-afk.lua"
+    },
+    {
+      "name": "UI Keyboard",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/GUI_keyboard.lua"
+    },
+    {
+      "name": "UNC Check",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/UNC.lua"
+    },
+    {
+      "name": "3D Render",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/3D%20render.lua"
+    },
+    {
+      "name": "Freecam",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/freecam.lua"
+    },
+    {
+      "name": "Inviz",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Inviz.lua"
+    },
+    {
+      "name": "Rewind player",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Rewind_the_player.lua"
+    },
+    {
+      "name": "Universal MAXI HUB",
+      "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Universal_MAXI%20HUB.lua"
+    },
+    {
+      "name": "Infinite Yield",
+      "url": "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"
+    },
+    {
+      "name": "Dex Explorer",
+      "url": "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"
+    }
+  ]
+}
