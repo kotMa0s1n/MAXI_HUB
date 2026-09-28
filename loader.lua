@@ -1,12 +1,13 @@
 -- MAXI HUB | universal entry
 -- loadstring(game:HttpGet("https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/loader.lua"))()
 
-local LOADER_VERSION = "1.2"
+local LOADER_VERSION = "1.3"
 local RAW = "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/"
 local CDN = "https://cdn.jsdelivr.net/gh/kotMa0s1n/MAXI_HUB@main/"
 
 local GAMES = {
 	[10082031223] = { name = "British Railway", path = "BR/loader.lua" },
+	[696347899] = { name = "Stepford County Railway", path = "SCR/loader.lua" },
 	[7049848150] = { name = "Stepford County Railway", path = "SCR/loader.lua" },
 	[3647330858] = { name = "Stepford County Railway", path = "SCR/loader.lua" },
 	[14502598369] = { name = "El Paso BR", path = "el-paso-br/loader.lua" },
@@ -101,7 +102,7 @@ local function detectByGui()
 		return GAMES[10082031223]
 	end
 	if pg:FindFirstChild("DriveGui") then
-		return GAMES[7049848150]
+		return GAMES[696347899]
 	end
 	return nil
 end

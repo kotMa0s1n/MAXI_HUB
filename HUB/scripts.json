@@ -3,29 +3,25 @@
     {
       "name": "British Railway",
       "short": "Autopilot, doors, AWS, auto next route",
-      "emoji": "🚂",
-      "icon": "rbxthumb://type=GameIcon&id=10082031223&w=150&h=150",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/br.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/BR/loader.lua"
     },
     {
       "name": "Stepford County Railway",
       "short": "Autopilot, doors, AWS, auto next leg",
-      "emoji": "🚃",
-      "icon": "rbxthumb://type=GameIcon&id=7049848150&w=150&h=150",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/scr.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/SCR/loader.lua"
     },
     {
       "name": "El Paso BR",
       "short": "Border RP autopilot",
-      "emoji": "🌵",
-      "icon": "rbxthumb://type=GameIcon&id=14502598369&w=150&h=150",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/epbr.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/el-paso-br/loader.lua"
     },
     {
       "name": "MAXI HUB Farm",
       "short": "AFK trees, stones, auto-sell",
-      "emoji": "🌲",
-      "icon": "rbxthumb://type=GameIcon&id=2668101271&w=150&h=150",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/farm.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxi-hub/master/loader.lua"
     }
   ],
@@ -33,55 +29,55 @@
     {
       "name": "Anti AFK",
       "short": "Stops idle kick",
-      "emoji": "🛡️",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-antiafk.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/anti-afk.lua"
     },
     {
       "name": "UI Keyboard",
       "short": "On-screen keyboard",
-      "emoji": "⌨️",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-keyboard.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/GUI_keyboard.lua"
     },
     {
       "name": "UNC Check",
       "short": "Executor compatibility test",
-      "emoji": "🧪",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-unc.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/UNC.lua"
     },
     {
       "name": "3D Render",
       "short": "Render settings",
-      "emoji": "🖥️",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-render.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/3D%20render.lua"
     },
     {
       "name": "Freecam",
       "short": "Free camera",
-      "emoji": "📷",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-freecam.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/freecam.lua"
     },
     {
       "name": "Inviz",
       "short": "Local invisibility",
-      "emoji": "👻",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-inviz.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Inviz.lua"
     },
     {
       "name": "Rewind player",
       "short": "Rewind character",
-      "emoji": "⏪",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-rewind.png",
       "url": "https://raw.githubusercontent.com/kotMa0s1n/maxkiti01/main/Rewind_the_player.lua"
     },
     {
       "name": "Infinite Yield",
       "short": "Admin commands",
-      "emoji": "⚡",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-iy.png",
       "url": "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"
     },
     {
       "name": "Dex Explorer",
       "short": "Instance explorer",
-      "emoji": "🔍",
+      "icon": "https://raw.githubusercontent.com/kotMa0s1n/MAXI_HUB/main/HUB/icons/uni-dex.png",
       "url": "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"
     }
   ]

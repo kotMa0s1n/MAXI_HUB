@@ -99,6 +99,54 @@ local function httpGet(url)
 	return nil
 end
 
+local function fileSafe(name)
+	name = tostring(name or "icon"):lower()
+	name = name:gsub("[^%w]+", "-"):gsub("^%-", ""):gsub("%-$", "")
+	if name == "" then
+		name = "icon"
+	end
+	return name
+end
+
+local function applyIcon(imageLabel, url, name)
+	if not imageLabel or type(url) ~= "string" or url == "" then
+		return
+	end
+	task.spawn(function()
+		local data = httpGet(url)
+		if type(data) ~= "string" or #data < 64 or not imageLabel.Parent then
+			return
+		end
+		local folder = "maxi-hub-icons"
+		pcall(function()
+			if typeof(makefolder) == "function" then
+				makefolder(folder)
+			end
+		end)
+		local path = folder .. "/" .. fileSafe(name) .. ".png"
+		local wrote = pcall(writefile, path, data)
+		if not wrote or not imageLabel.Parent then
+			return
+		end
+		local asset
+		if typeof(getcustomasset) == "function" then
+			local ok, res = pcall(getcustomasset, path)
+			if ok then
+				asset = res
+			end
+		end
+		if not asset and typeof(getsynasset) == "function" then
+			local ok, res = pcall(getsynasset, path)
+			if ok then
+				asset = res
+			end
+		end
+		if type(asset) == "string" and imageLabel.Parent then
+			imageLabel.Image = asset
+		end
+	end)
+end
+
 local function loadCatalog()
 	local data = genv.MaxiHubScriptCatalog
 	if type(data) ~= "table" then
@@ -242,19 +290,9 @@ local function makeCard(parent, entry, order)
 	icon.BackgroundColor3 = COLORS.bg
 	icon.BorderSizePixel = 0
 	icon.ScaleType = Enum.ScaleType.Crop
-	icon.Image = (type(entry.icon) == "string" and entry.icon) or ""
 	icon.Parent = card
 	addCorner(icon, 8)
-
-	if icon.Image == "" then
-		local em = Instance.new("TextLabel")
-		em.Size = UDim2.new(1, 0, 1, 0)
-		em.BackgroundTransparency = 1
-		em.Font = Enum.Font.GothamBold
-		em.TextSize = 22
-		em.Text = entry.emoji or "▶"
-		em.Parent = icon
-	end
+	applyIcon(icon, entry.icon, entry.name)
 
 	local run = Instance.new("TextLabel")
 	run.Size = UDim2.new(0, 58, 0, 28)
